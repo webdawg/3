@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Solar System Network — Phase 1</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 10px; left: 12px; z-index: 10;
+    font: 12px/1.5 monospace; color: #9fb3c8; pointer-events: none;
+    text-shadow: 0 1px 2px #000;
+  }
+</style>
+</head>
+<body>
+<div id="hud">
+  drag: orbit &nbsp;|&nbsp; scroll: zoom &nbsp;|&nbsp; right-drag: pan &nbsp;|&nbsp; arrow keys: pan<br/>
+  sun + planets (orbit paths) &nbsp;|&nbsp; dots = devices around Earth &nbsp;|&nbsp; lines = laser links
+</div>
+
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// ---------- basic scene ----------
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 2000);
+camera.position.set(0, 45, 95);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.listenToKeyEvents(window); // arrow keys pan
+controls.target.set(0, 0, 0);
+
+window.addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- starfield (just for look) ----------
+{
+  const starGeo = new THREE.BufferGeometry();
+  const count = 2000;
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const r = 400 + Math.random() * 600;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi);
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+  }
+  starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.8 });
+  scene.add(new THREE.Points(starGeo, starMat));
+}
+
+// ---------- lighting ----------
+scene.add(new THREE.AmbientLight(0x404050, 1.2));
+const sunLight = new THREE.PointLight(0xffffff, 2.2, 0, 0);
+scene.add(sunLight);
+
+// ---------- sun ----------
+const sun = new THREE.Mesh(
+  new THREE.SphereGeometry(4, 32, 32),
+  new THREE.MeshBasicMaterial({ color: 0xffdd66 })
+);
+scene.add(sun);
+
+// ---------- helper: circular orbit path ring ----------
+function makeOrbitRing(radius, color = 0x2a3a55) {
+  const segments = 128;
+  const pts = new Float32Array(segments * 3);
+  for (let i = 0; i < segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    pts[i * 3] = Math.cos(a) * radius;
+    pts[i * 3 + 1] = 0;
+    pts[i * 3 + 2] = Math.sin(a) * radius;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pts, 3));
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.5 });
+  return new THREE.LineLoop(geo, mat);
+}
+
+// ---------- planets (artistic scale, not to real scale) ----------
+// dist, size, color, orbital period (relative — bigger = slower)
+const PLANETS = [
+  { name: "Mercury", dist: 8,  size: 0.4, color: 0x9a9a9a, period: 6  },
+  { name: "Venus",   dist: 11, size: 0.6, color: 0xd9b38c, period: 10 },
+  { name: "Earth",   dist: 15, size: 0.65, color: 0x4d90fe, period: 16 },
+  { name: "Mars",    dist: 19, size: 0.5, color: 0xd1512d, period: 26 },
+  { name: "Jupiter", dist: 26, size: 1.8, color: 0xd8ae70, period: 60 },
+  { name: "Saturn",  dist: 33, size: 1.5, color: 0xe0c88a, period: 90 },
+  { name: "Uranus",  dist: 39, size: 1.1, color: 0x9fdfe0, period: 130 },
+  { name: "Neptune", dist: 45, size: 1.1, color: 0x5b7fe0, period: 165 },
+];
+
+const planets = PLANETS.map((p) => {
+  scene.add(makeOrbitRing(p.dist));
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(p.size, 24, 24),
+    new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.8 })
+  );
+  scene.add(mesh);
+  return { ...p, angle: Math.random() * Math.PI * 2, mesh };
+});
+
+const earth = planets.find((p) => p.name === "Earth");
+
+// ---------- devices (dots) orbiting Earth, connected by laser links ----------
+const earthAnchor = new THREE.Object3D();
+scene.add(earthAnchor);
+earthAnchor.add(makeOrbitRing(2.4, 0x66ffcc));
+
+const DEVICE_COUNT = 6;
+const devices = [];
+for (let i = 0; i < DEVICE_COUNT; i++) {
+  const dot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.15, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0x66ffcc })
+  );
+  earthAnchor.add(dot);
+  devices.push({
+    mesh: dot,
+    angle: (i / DEVICE_COUNT) * Math.PI * 2,
+    speed: 0.9,
+  });
+}
+
+// laser links: ring network between consecutive devices
+const linkLines = [];
+for (let i = 0; i < DEVICE_COUNT; i++) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+  const mat = new THREE.LineBasicMaterial({ color: 0xff5566 });
+  const line = new THREE.Line(geo, mat);
+  scene.add(line);
+  linkLines.push(line);
+}
+
+// ---------- animation loop ----------
+const clock = new THREE.Clock();
+const tmpA = new THREE.Vector3();
+const tmpB = new THREE.Vector3();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  const t = clock.elapsedTime;
+
+  // planets revolve around the sun
+  for (const p of planets) {
+    p.angle += (1 / p.period) * dt * 6;
+    p.mesh.position.set(Math.cos(p.angle) * p.dist, 0, Math.sin(p.angle) * p.dist);
+  }
+
+  // earth anchor follows earth so its devices/links travel with it
+  earthAnchor.position.copy(earth.mesh.position);
+
+  // devices orbit earth locally
+  for (const d of devices) {
+    d.angle += d.speed * dt;
+    d.mesh.position.set(Math.cos(d.angle) * 2.4, 0, Math.sin(d.angle) * 2.4);
+  }
+
+  // laser links follow device world positions each frame
+  for (let i = 0; i < DEVICE_COUNT; i++) {
+    const a = devices[i].mesh;
+    const b = devices[(i + 1) % DEVICE_COUNT].mesh;
+    a.getWorldPosition(tmpA);
+    b.getWorldPosition(tmpB);
+    const arr = linkLines[i].geometry.attributes.position.array;
+    arr[0] = tmpA.x; arr[1] = tmpA.y; arr[2] = tmpA.z;
+    arr[3] = tmpB.x; arr[4] = tmpB.y; arr[5] = tmpB.z;
+    linkLines[i].geometry.attributes.position.needsUpdate = true;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
