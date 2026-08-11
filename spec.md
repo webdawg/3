@@ -88,6 +88,20 @@ We are building a simulation of a solar-system-scale space infrastructure networ
 - **Shared power source across destinations on opposite sides of the sun**: the same Laser Transmitter that powers Infinite Compute (behind the sun) now also powers the survey ship (in front of the sun) via a second relay branch — establishing that one transmitter can feed multiple independent relay chains/destinations, not just one.
 - **Routing has to respect the sun as a physical obstruction**: a straight line from the (behind-the-sun) transmitter to the (in-front-of-the-sun) ship would pass through the sun itself. The new branch uses two fixed bypass relay hops, offset well to the side, to route the beam around the sun rather than through it — the same kind of straight-line-through-the-center problem flagged earlier in Goal 2's addendum, now solved deliberately rather than by accident.
 
+### Goal 6 — Solar Observatories (verbatim)
+
+> build a set of observation satellites that observe information from the sun searching for galactic data transmission
+
+**Addendum (verbatim) — the search direction:**
+
+> the data it is looking for is both in deep space, and coming from the sun
+
+**Implications for the spec:**
+
+- **New device type — observation satellite**: dual-purpose, unlike prior devices. It orbits the sun to observe solar activity up close (like the mirrors and diamond lenses), while its sensor searches for the galactic data transmission — a device can observe its orbital host and also actively search elsewhere at the same time.
+- **Searching both directions, not one known target**: the transmission could be coming from deep space or from the sun itself, so the sensor continuously sweeps between the two rather than fixating on one fixed direction (e.g. the galactic travel line, already used for other structures) — since a "search" implies the source isn't known yet, unlike Goals 4/5 where placement was deliberately keyed to that established axis.
+- **Placed in a dedicated clear orbital band**: a ring between Mercury's and Venus's orbits, chosen specifically because it doesn't overlap either — establishing that new device rings need to be placed with existing orbits (and their eccentricity-driven distance ranges, post orbit-correction) in mind, not just picked arbitrarily.
+
 ### Planet Orbit Correction (verbatim)
 
 > make sure the orbits of the planets are perfectly correct
