@@ -62,7 +62,37 @@ We are building a simulation of a solar-system-scale space infrastructure networ
 - **Relays are scattered ("put them everywhere"), not a single fixed chain**: the mesh isn't one straight line of stations from the sun to Earth — stations are strewn through the intervening space, connected to their nearest neighbors, forming a web of varied links rather than a single path. This also means there can be more than one route energy could take, echoing the "move energy around" framing — the receiving end can pick whichever relay is currently closest as Earth moves, i.e. the mesh dynamically re-routes rather than using one fixed final hop.
 - **Distinct from the diamond-lens/photon-link systems (Goal 2)**: those move *light* between mirrors/lens/foundry at the sun end; this moves *power* (as microwaves) from the foundry outward to Earth. Two different device families serving two different legs of the same overall energy pipeline: sunlight → mirrors/lenses → foundry → microwave transmitter → relay mesh → rectenna.
 
-## Phase 1 Scope: Physics Engine Only
+### Goal 4 — Infinite Compute (verbatim)
+
+> put an area of infinite compute 'behind' the sun - directly oppisite of the energy collection point - with a title infinite compute on top of a blackhole - build a set of laser relay devices to power it
+
+**Implications for the spec:**
+
+- **New structure type — compute cluster ("Infinite Compute")**: a theoretically unbounded compute facility built around a black hole. A new category of consumer in the energy pipeline, alongside the foundry (material processing) and Earth (general power) — the network doesn't just move energy to inhabited/industrial sites, it also feeds pure compute.
+- **Positioned directly opposite the energy collection point**: placed on the "behind" half of the sun's galactic travel line (see Goal 2's addendum), the same distance from the sun as the foundry is on the "ahead" half — a deliberate mirror-image placement relative to the foundry, using the same reference line already established for orientation.
+- **Lasers are acceptable here, unlike the Earth link (Goal 3)**: the earlier constraint against lasers was specifically about not shooting a high-power beam at Earth. A dedicated laser relay chain (transmitter → fixed relay stations → the compute cluster) is fine on this route because it stays entirely on the far side of the sun, never crossing near Earth or any populated body — the safety constraint is about the destination/path, not lasers as a technology.
+- **New device types — laser transmitter, laser relay**: parallel to the microwave transmitter/relay pair from Goal 3, but laser-based and arranged as a single fixed chain (not a scattered mesh) since the source and destination are both static and already in a straight line.
+
+### Goal 5 — Survey Ship (verbatim)
+
+> put a ship that collects data in front of the sun parelle to the galatic line - collecting data and powered by the same laser transmission array
+
+**Addendum (verbatim) — correcting the ship's distance:**
+
+> the ship should be ahead of the heliosphere
+
+**Implications for the spec:**
+
+- **New device type — survey ship**: a data-collection device, distinct from anything so far (relays, mirrors, lenses) in that its purpose is observation, not moving energy or processing material. Patrols a track parallel to the galactic travel line, ahead of the heliosphere rather than close in near the foundry/mirror array.
+- **New reference concept — heliosphere boundary**: a marker (not a device — nothing to select or track) around the sun, well past Neptune's orbit, denoting roughly where the sun's direct influence gives way to interstellar space. The survey ship's patrol lane sits entirely beyond it. This also means the ship's power link is now a genuinely long-haul relay — one shared Laser Transmitter now services a nearby destination (Infinite Compute, just past the sun) and a far one (the ship, well beyond the outer planets) via the same bypass branch.
+- **Shared power source across destinations on opposite sides of the sun**: the same Laser Transmitter that powers Infinite Compute (behind the sun) now also powers the survey ship (in front of the sun) via a second relay branch — establishing that one transmitter can feed multiple independent relay chains/destinations, not just one.
+- **Routing has to respect the sun as a physical obstruction**: a straight line from the (behind-the-sun) transmitter to the (in-front-of-the-sun) ship would pass through the sun itself. The new branch uses two fixed bypass relay hops, offset well to the side, to route the beam around the sun rather than through it — the same kind of straight-line-through-the-center problem flagged earlier in Goal 2's addendum, now solved deliberately rather than by accident.
+
+### Planet Orbit Correction (verbatim)
+
+> make sure the orbits of the planets are perfectly correct
+
+**Implications for the spec:** the prototype's planetary orbits were circular with hand-picked, inconsistent periods (a planet's speed had no real relationship to its distance from the sun). Corrected to true two-body Keplerian ellipses: each planet uses its real orbital eccentricity (so the sun sits at a focus, not the center — most noticeable on Mercury, e≈0.21), its period is derived from Kepler's third law (T ∝ a^1.5) relative to the scene's distance scale rather than picked by hand, and position each frame is solved from Kepler's equation, so a planet correctly moves faster near perihelion and slower near aphelion (Kepler's second law) instead of sweeping at a constant angular rate. This resolves the physical-consistency half of the "N-body vs. simplified model" open question below in favor of the simplified (Keplerian, sun-fixed) model for Phase 1 — full N-body mutual gravitation between planets remains future work.
 
 Phase 1 is deliberately narrow. It covers only:
 
@@ -85,6 +115,8 @@ Explicitly out of scope for Phase 1: solar power modeling, device attributes/sub
 - Active reconfiguration / maneuvering (Goal 1): devices moved deliberately (thrust, not just gravity) and regrouped into different structures at will — e.g. a relay chain to the moon, or a swarm of independent devices combined into one larger virtual instrument and later reconfigured. Requires a maneuvering force model on top of the gravity integrator, plus dynamic, reassignable device grouping and freely editable `LaserLink` topology.
 - Concentrated solar foundry (Goal 2): a ring/array of diamond magnification lens devices (1cm thick) positioned near the sun, each oriented to focus incident sunlight toward a shared focal point — a foundry structure/device performing light-powered high-temperature material processing. Needs `thickness`/`material` device attributes and a way to express "many devices aimed at one functional target" distinct from `structureId` merging.
 - Microwave power relay mesh, foundry to Earth (Goal 3): a distributed, non-laser power-delivery path — a microwave transmitter at the sun end, a scattered mesh of fixed power-relay stations connected to their nearest neighbors, and a rectenna at the Earth end that dynamically re-aims to the nearest relay as Earth orbits. Needs `deviceType` values for `microwave-transmitter`, `power-relay`, and `rectenna`, plus a link type distinct from `LaserLink` (a link carrying power, not data/topology) and a notion of dynamically-selected (not fixed) link endpoints.
+- Infinite Compute, a black-hole compute cluster behind the sun (Goal 4): a new consumer type on the energy network — pure compute rather than an inhabited or industrial site — fed by a dedicated laser relay chain that's safe specifically because it never crosses near Earth. Needs `deviceType` values for `compute-cluster`, `laser-transmitter`, and `laser-relay`, and reinforces that link-safety constraints belong on the route/destination, not the transport technology itself.
+- Survey ship, patrolling in front of the sun (Goal 5): first `deviceType` whose purpose is data collection rather than moving energy/material. Shares a single power source (the Laser Transmitter) with a destination on the opposite side of the sun (Infinite Compute), which surfaced the need for routing/bypass logic — a link can't always be a straight line if a body physically sits between the two endpoints.
 
 Because attributes are coming later, the data model should represent devices (and other bodies) as extensible entities from day one, not just bare position/velocity structs. Devices are never deleted on retirement — only reassigned status and (eventually) relocated to a scrapyard — so the model must support a persistent lifecycle rather than add/remove semantics.
 

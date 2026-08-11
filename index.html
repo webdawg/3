@@ -33,9 +33,11 @@
 <body>
 <div id="hud">
   drag: orbit &nbsp;|&nbsp; scroll: zoom &nbsp;|&nbsp; right-drag: pan &nbsp;|&nbsp; arrow keys: pan &nbsp;|&nbsp; click: select<br/>
-  sun + planets (orbit paths) &nbsp;|&nbsp; green dots = Earth relay devices &nbsp;|&nbsp; silver dots = mirrors, linked in a photon ring &nbsp;|&nbsp; white glow = static foundry, amplified by an in-line diamond lens per mirror<br/>
+  sun + planets on true Kepler ellipses (real eccentricities, sun at a focus) &nbsp;|&nbsp; green dots = Earth relay devices &nbsp;|&nbsp; silver dots = mirrors, linked in a photon ring &nbsp;|&nbsp; white glow = static foundry, amplified by an in-line diamond lens per mirror<br/>
   purple dots = microwave power relay mesh, transmitter (sun end) &rarr; rectenna (Earth end) &nbsp;|&nbsp; no lasers to Earth — power hops safely through the mesh instead<br/>
-  dashed line through the sun = its direction of travel relative to the galaxy (foundry sits on the forward half)
+  dashed line through the sun = its direction of travel relative to the galaxy (foundry sits on the forward half)<br/>
+  black sphere behind the sun = Infinite Compute, directly opposite the foundry &nbsp;|&nbsp; red dots/lines = laser relay chain powering it (safe here — far side of the sun from Earth)<br/>
+  faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line, powered by the same Laser Transmitter via a long bypass relay
 </div>
 <div id="info-panel">
   <span class="close" id="info-close">✕</span>
@@ -136,28 +138,69 @@ function makeOrbitRing(radius, color = 0x2a3a55) {
   return new THREE.LineLoop(geo, mat);
 }
 
-// ---------- planets (artistic scale, not to real scale) ----------
-// dist, size, color, orbital period (relative — bigger = slower)
+// ---------- Keplerian orbital mechanics ----------
+// Distances (semi-major axis `dist`) are still artistic/compressed, not real AU — but
+// given that scale, orbits are now physically correct relative to it: real eccentricities
+// (so orbits are true ellipses with the sun at a focus, not circles centered on it),
+// periods derived from Kepler's third law (T ∝ a^1.5, not hand-picked), and position
+// each frame solved from Kepler's equation (so motion correctly speeds up near perihelion
+// and slows near aphelion — Kepler's second law — rather than sweeping at constant angle).
+const KEPLER_K = 16 / Math.pow(15, 1.5); // calibrated so Earth's period matches the prior hand-tuned value (16)
+
+function solveEccentricAnomaly(meanAnomaly, e) {
+  let E = meanAnomaly;
+  for (let i = 0; i < 6; i++) {
+    E -= (E - e * Math.sin(E) - meanAnomaly) / (1 - e * Math.cos(E));
+  }
+  return E;
+}
+
+function keplerPosition(a, e, meanAnomaly) {
+  const E = solveEccentricAnomaly(meanAnomaly, e);
+  return {
+    x: a * (Math.cos(E) - e),
+    z: a * Math.sqrt(1 - e * e) * Math.sin(E),
+  };
+}
+
+function makeEllipseOrbitRing(a, e, color = 0x2a3a55) {
+  const segments = 128;
+  const pts = new Float32Array(segments * 3);
+  for (let i = 0; i < segments; i++) {
+    const E = (i / segments) * Math.PI * 2; // sampled by eccentric anomaly, not true anomaly, for even ellipse coverage
+    pts[i * 3] = a * (Math.cos(E) - e);
+    pts[i * 3 + 1] = 0;
+    pts[i * 3 + 2] = a * Math.sqrt(1 - e * e) * Math.sin(E);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pts, 3));
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.5 });
+  return new THREE.LineLoop(geo, mat);
+}
+
+// ---------- planets (artistic distance scale, not to real scale) ----------
+// dist = semi-major axis (a), e = real orbital eccentricity; period is derived, not hand-picked
 const PLANETS = [
-  { name: "Mercury", dist: 8,  size: 0.4, color: 0x9a9a9a, period: 6,   desc: "Innermost planet. Closest natural body to the sun — a candidate site for high-intensity solar collection infrastructure." },
-  { name: "Venus",   dist: 11, size: 0.6, color: 0xd9b38c, period: 10,  desc: "Second planet from the sun. No devices deployed here yet." },
-  { name: "Earth",   dist: 15, size: 0.65, color: 0x4d90fe, period: 16, desc: "Home world. Anchors a laser-linked relay network of orbiting devices (see the green dots)." },
-  { name: "Mars",    dist: 19, size: 0.5, color: 0xd1512d, period: 26,  desc: "Fourth planet. No devices deployed here yet." },
-  { name: "Jupiter", dist: 26, size: 1.8, color: 0xd8ae70, period: 60,  desc: "Largest planet in the system. No devices deployed here yet." },
-  { name: "Saturn",  dist: 33, size: 1.5, color: 0xe0c88a, period: 90,  desc: "Ringed gas giant. No devices deployed here yet." },
-  { name: "Uranus",  dist: 39, size: 1.1, color: 0x9fdfe0, period: 130, desc: "Ice giant, tilted on its side. No devices deployed here yet." },
-  { name: "Neptune", dist: 45, size: 1.1, color: 0x5b7fe0, period: 165, desc: "Outermost planet. No devices deployed here yet." },
+  { name: "Mercury", dist: 8,  e: 0.2056, size: 0.4, color: 0x9a9a9a, desc: "Innermost planet. Closest natural body to the sun — a candidate site for high-intensity solar collection infrastructure." },
+  { name: "Venus",   dist: 11, e: 0.0068, size: 0.6, color: 0xd9b38c, desc: "Second planet from the sun. No devices deployed here yet." },
+  { name: "Earth",   dist: 15, e: 0.0167, size: 0.65, color: 0x4d90fe, desc: "Home world. Anchors a laser-linked relay network of orbiting devices (see the green dots)." },
+  { name: "Mars",    dist: 19, e: 0.0934, size: 0.5, color: 0xd1512d, desc: "Fourth planet. No devices deployed here yet." },
+  { name: "Jupiter", dist: 26, e: 0.0489, size: 1.8, color: 0xd8ae70, desc: "Largest planet in the system. No devices deployed here yet." },
+  { name: "Saturn",  dist: 33, e: 0.0565, size: 1.5, color: 0xe0c88a, desc: "Ringed gas giant. No devices deployed here yet." },
+  { name: "Uranus",  dist: 39, e: 0.0457, size: 1.1, color: 0x9fdfe0, desc: "Ice giant, tilted on its side. No devices deployed here yet." },
+  { name: "Neptune", dist: 45, e: 0.0113, size: 1.1, color: 0x5b7fe0, desc: "Outermost planet. No devices deployed here yet." },
 ];
 
 const planets = PLANETS.map((p) => {
-  scene.add(makeOrbitRing(p.dist));
+  scene.add(makeEllipseOrbitRing(p.dist, p.e));
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(p.size, 24, 24),
     new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.8 })
   );
   scene.add(mesh);
   makeSelectable(mesh, { name: p.name, kind: "Planet", function: p.desc });
-  return { ...p, angle: Math.random() * Math.PI * 2, mesh };
+  const period = KEPLER_K * Math.pow(p.dist, 1.5); // Kepler's third law: T ∝ a^1.5
+  return { ...p, period, angle: Math.random() * Math.PI * 2, mesh };
 });
 
 const earth = planets.find((p) => p.name === "Earth");
@@ -260,7 +303,7 @@ const FOUNDRY_POS = GALACTIC_TRAVEL_DIR.clone().multiplyScalar(FOUNDRY_DIST);
 
 // galactic path: a line through the sun along its direction of travel relative to
 // the galaxy — the foundry sits on the forward half of this same line
-const GALACTIC_LINE_LENGTH = 60; // extends well past Neptune's orbit (45) for visibility
+const GALACTIC_LINE_LENGTH = 65; // extends past the heliosphere marker (50) and the survey ship's patrol lane
 {
   const behind = GALACTIC_TRAVEL_DIR.clone().multiplyScalar(-GALACTIC_LINE_LENGTH);
   const ahead = GALACTIC_TRAVEL_DIR.clone().multiplyScalar(GALACTIC_LINE_LENGTH);
@@ -442,6 +485,181 @@ downlinkGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(
 const downlinkLine = new THREE.Line(downlinkGeo, new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.8 }));
 scene.add(downlinkLine);
 
+// ---------- text label helper (canvas sprite, always faces the camera) ----------
+function makeTextSprite(text, color = "#ffffff") {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const fontSize = 64;
+  ctx.font = `bold ${fontSize}px monospace`;
+  canvas.width = ctx.measureText(text).width + 40;
+  canvas.height = fontSize * 1.6;
+  ctx.font = `bold ${fontSize}px monospace`; // font resets when canvas is resized
+  ctx.fillStyle = color;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  ctx.shadowColor = "#000";
+  ctx.shadowBlur = 10;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  const aspect = canvas.width / canvas.height;
+  sprite.scale.set(aspect * 1.4, 1.4, 1);
+  return sprite;
+}
+
+// ---------- infinite compute: a black hole directly opposite the foundry ----------
+// Sits on the "behind" half of the galactic travel line, the same distance from
+// the sun as the foundry is on the "ahead" half — directly opposite the energy
+// collection point. Powered by a dedicated laser relay chain: unlike the microwave
+// mesh feeding Earth, a laser is safe here because the beam never crosses near
+// Earth or any populated body — it stays entirely on the far side of the sun.
+const BLACKHOLE_POS = FOUNDRY_POS.clone().negate();
+
+const blackHole = new THREE.Mesh(
+  new THREE.SphereGeometry(0.5, 24, 24),
+  new THREE.MeshBasicMaterial({ color: 0x000000 })
+);
+blackHole.position.copy(BLACKHOLE_POS);
+scene.add(blackHole);
+makeSelectable(blackHole, {
+  name: "Infinite Compute",
+  kind: "Structure",
+  deviceType: "compute-cluster",
+  status: "active",
+  function: "A theoretically unbounded compute cluster built around a black hole, positioned directly opposite the Solar Foundry on the sun's galactic travel line. Powered by a dedicated laser relay chain rather than the microwave mesh serving Earth.",
+}, 1.2);
+
+const accretionDisk = new THREE.Mesh(
+  new THREE.TorusGeometry(0.95, 0.07, 12, 64),
+  new THREE.MeshBasicMaterial({ color: 0xff7a3c, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending })
+);
+accretionDisk.rotation.x = 1.05;
+blackHole.add(accretionDisk);
+
+const infiniteComputeLabel = makeTextSprite("INFINITE COMPUTE", "#ffcf9e");
+infiniteComputeLabel.position.copy(BLACKHOLE_POS).add(new THREE.Vector3(0, 1.6, 0));
+scene.add(infiniteComputeLabel);
+
+// laser transmitter, just outside the sun on the black hole's side
+const LASER_TRANSMITTER_POS = GALACTIC_TRAVEL_DIR.clone().multiplyScalar(-4.6);
+const laserTransmitter = new THREE.Mesh(
+  new THREE.ConeGeometry(0.3, 0.5, 12),
+  new THREE.MeshStandardMaterial({ color: 0xff4455, metalness: 0.6, roughness: 0.3, emissive: 0x550a10, emissiveIntensity: 0.8 })
+);
+laserTransmitter.position.copy(LASER_TRANSMITTER_POS);
+laserTransmitter.lookAt(BLACKHOLE_POS);
+scene.add(laserTransmitter);
+makeSelectable(laserTransmitter, {
+  name: "Laser Transmitter",
+  kind: "Structure",
+  deviceType: "laser-transmitter",
+  status: "active",
+  function: "High-power laser transmitter drawing on nearby solar energy. Feeds two relay chains: one to Infinite Compute behind the sun, and one — bypassing the sun's far side — forward to the Survey Ship's patrol track in front of the sun.",
+}, 0.6);
+
+// fixed laser relay chain between the transmitter and the black hole (all static —
+// nothing here orbits, so the links only need to be computed once)
+const LASER_RELAY_COUNT = 4;
+const laserRelayPositions = [];
+for (let i = 1; i <= LASER_RELAY_COUNT; i++) {
+  const t = i / (LASER_RELAY_COUNT + 1);
+  laserRelayPositions.push(new THREE.Vector3().lerpVectors(LASER_TRANSMITTER_POS, BLACKHOLE_POS, t));
+}
+
+for (let i = 0; i < LASER_RELAY_COUNT; i++) {
+  const pos = laserRelayPositions[i];
+  const relay = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 10, 10),
+    new THREE.MeshBasicMaterial({ color: 0xff3344 })
+  );
+  relay.position.copy(pos);
+  scene.add(relay);
+  makeSelectable(relay, {
+    name: `Laser Relay ${i + 1}`,
+    kind: "Device",
+    deviceType: "laser-relay",
+    status: "active",
+    function: "Fixed laser relay station powering Infinite Compute. Part of a straight-line chain from the Laser Transmitter to the black hole, entirely on the far side of the sun from Earth.",
+  }, 0.4);
+}
+
+const laserChainPoints = [LASER_TRANSMITTER_POS, ...laserRelayPositions, BLACKHOLE_POS];
+for (let i = 0; i < laserChainPoints.length - 1; i++) {
+  const a = laserChainPoints[i], b = laserChainPoints[i + 1];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([a.x, a.y, a.z, b.x, b.y, b.z]), 3));
+  const mat = new THREE.LineBasicMaterial({ color: 0xff3344, transparent: true, opacity: 0.85 });
+  scene.add(new THREE.Line(geo, mat));
+}
+
+// ---------- heliosphere boundary (reference marker only, not a device) ----------
+// A faint sphere around the sun, well past Neptune's orbit (45), marking roughly
+// where the sun's influence gives way to interstellar space. The survey ship patrols
+// beyond it, "ahead" in the direction of galactic travel.
+const HELIOSPHERE_RADIUS = 50;
+{
+  const geo = new THREE.SphereGeometry(HELIOSPHERE_RADIUS, 32, 20);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x4a6fa8, wireframe: true, transparent: true, opacity: 0.06, depthWrite: false });
+  scene.add(new THREE.Mesh(geo, mat));
+}
+
+// ---------- survey ship: patrols ahead of the heliosphere, parallel to the galactic line ----------
+// V is perpendicular to the galactic travel line — used both as the ship's patrol
+// offset and to route a bypass relay branch (from the same Laser Transmitter) wide
+// of the sun, since the transmitter sits behind the sun and the ship patrols in front.
+const V = new THREE.Vector3(0, 1, 0).cross(GALACTIC_TRAVEL_DIR).normalize();
+const SHIP_LATERAL_OFFSET = 2.5;
+const SHIP_TRAVEL_MIN = HELIOSPHERE_RADIUS + 2;
+const SHIP_TRAVEL_MAX = HELIOSPHERE_RADIUS + 8;
+
+const ship = new THREE.Mesh(
+  new THREE.BoxGeometry(0.6, 0.16, 0.26),
+  new THREE.MeshStandardMaterial({ color: 0x9fe8ff, metalness: 0.7, roughness: 0.25, emissive: 0x0d2a33, emissiveIntensity: 0.5 })
+);
+ship.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), GALACTIC_TRAVEL_DIR); // hull aligned with its direction of travel
+scene.add(ship);
+makeSelectable(ship, {
+  name: "Survey Ship",
+  kind: "Device",
+  deviceType: "survey-ship",
+  status: "active",
+  function: "Patrols a track parallel to the sun's galactic travel line, ahead of the heliosphere, collecting observational data. Powered by the same Laser Transmitter that feeds Infinite Compute, via a long bypass relay chain routed wide of the sun.",
+}, 0.7);
+
+const shipLabel = makeTextSprite("SURVEY SHIP", "#bff3ff");
+scene.add(shipLabel); // position tracks the ship every frame, since (unlike the black hole) it moves
+
+// two fixed relay hops bending the beam around the sun (well outside its radius 4)
+// from the transmitter (behind, on-axis) out to the ship's patrol lane (in front, offset)
+const bypassWaypoints = [
+  GALACTIC_TRAVEL_DIR.clone().multiplyScalar(-2).addScaledVector(V, 5),
+  GALACTIC_TRAVEL_DIR.clone().multiplyScalar(4).addScaledVector(V, 5),
+];
+for (let i = 0; i < bypassWaypoints.length; i++) {
+  const relay = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 10, 10),
+    new THREE.MeshBasicMaterial({ color: 0xff3344 })
+  );
+  relay.position.copy(bypassWaypoints[i]);
+  scene.add(relay);
+  makeSelectable(relay, {
+    name: `Laser Bypass Relay ${i + 1}`,
+    kind: "Device",
+    deviceType: "laser-relay",
+    status: "active",
+    function: "Fixed laser relay station bending the Laser Transmitter's beam wide around the sun, carrying power forward to the Survey Ship's patrol lane in front of the sun.",
+  }, 0.4);
+}
+addStaticLink(LASER_TRANSMITTER_POS, bypassWaypoints[0], 0xff3344, 0.85);
+addStaticLink(bypassWaypoints[0], bypassWaypoints[1], 0xff3344, 0.85);
+
+// final leg is dynamic — the ship moves along its patrol lane
+const shipBeamGeo = new THREE.BufferGeometry();
+shipBeamGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+const shipBeam = new THREE.Line(shipBeamGeo, new THREE.LineBasicMaterial({ color: 0xff3344, transparent: true, opacity: 0.85 }));
+scene.add(shipBeam);
+
 // ---------- click-to-select ----------
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
@@ -530,10 +748,13 @@ function animate() {
   const dt = clock.getDelta();
   const t = clock.elapsedTime;
 
-  // planets revolve around the sun
+  // planets revolve around the sun on true Kepler ellipses (sun at a focus, not the
+  // center) — p.angle is the mean anomaly, which increases at a constant rate; actual
+  // position sweeps faster near perihelion and slower near aphelion (Kepler's 2nd law)
   for (const p of planets) {
     p.angle += (1 / p.period) * dt * 6;
-    p.mesh.position.set(Math.cos(p.angle) * p.dist, 0, Math.sin(p.angle) * p.dist);
+    const pos = keplerPosition(p.dist, p.e, p.angle);
+    p.mesh.position.set(pos.x, 0, pos.z);
   }
 
   // earth anchor follows earth so its devices/links travel with it
@@ -594,6 +815,18 @@ function animate() {
     arr[0] = tmpLensPos.x; arr[1] = tmpLensPos.y; arr[2] = tmpLensPos.z;
     arr[3] = FOUNDRY_POS.x; arr[4] = FOUNDRY_POS.y; arr[5] = FOUNDRY_POS.z;
     l.outBeam.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // survey ship patrols back and forth in front of the sun, parallel to the galactic line
+  const shipT = SHIP_TRAVEL_MIN + (Math.sin(t * 0.3) * 0.5 + 0.5) * (SHIP_TRAVEL_MAX - SHIP_TRAVEL_MIN);
+  ship.position.copy(GALACTIC_TRAVEL_DIR).multiplyScalar(shipT).addScaledVector(V, SHIP_LATERAL_OFFSET);
+  shipLabel.position.copy(ship.position).add(new THREE.Vector3(0, 1.2, 0));
+  {
+    const b = bypassWaypoints[1];
+    const arr = shipBeam.geometry.attributes.position.array;
+    arr[0] = b.x; arr[1] = b.y; arr[2] = b.z;
+    arr[3] = ship.position.x; arr[4] = ship.position.y; arr[5] = ship.position.z;
+    shipBeam.geometry.attributes.position.needsUpdate = true;
   }
 
   // keep the selection highlight ring pinned to its (possibly moving) target
