@@ -11,12 +11,37 @@
     font: 12px/1.5 monospace; color: #9fb3c8; pointer-events: none;
     text-shadow: 0 1px 2px #000;
   }
+  #info-panel {
+    position: fixed; top: 0; right: 0; height: 100%; width: 280px;
+    max-width: 80vw; box-sizing: border-box; padding: 18px;
+    background: rgba(8, 12, 22, 0.88); border-left: 1px solid #24314a;
+    font: 13px/1.6 monospace; color: #d7e2f0; z-index: 20;
+    transform: translateX(100%); transition: transform 0.18s ease-out;
+  }
+  #info-panel.open { transform: translateX(0); }
+  #info-panel h2 { margin: 0 0 4px; font-size: 16px; color: #ffdd66; }
+  #info-panel .kind { color: #66ffcc; margin-bottom: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+  #info-panel .row { margin-bottom: 8px; }
+  #info-panel .row .label { color: #6f85a3; }
+  #info-panel .close {
+    position: absolute; top: 12px; right: 14px; cursor: pointer;
+    color: #6f85a3; font-size: 16px; pointer-events: auto;
+  }
+  #info-panel .close:hover { color: #fff; }
 </style>
 </head>
 <body>
 <div id="hud">
-  drag: orbit &nbsp;|&nbsp; scroll: zoom &nbsp;|&nbsp; right-drag: pan &nbsp;|&nbsp; arrow keys: pan<br/>
-  sun + planets (orbit paths) &nbsp;|&nbsp; dots = devices around Earth &nbsp;|&nbsp; lines = laser links
+  drag: orbit &nbsp;|&nbsp; scroll: zoom &nbsp;|&nbsp; right-drag: pan &nbsp;|&nbsp; arrow keys: pan &nbsp;|&nbsp; click: select<br/>
+  sun + planets (orbit paths) &nbsp;|&nbsp; green dots = Earth relay devices &nbsp;|&nbsp; silver dots = mirrors, linked in a photon ring &nbsp;|&nbsp; white glow = static foundry, amplified by an in-line diamond lens per mirror<br/>
+  purple dots = microwave power relay mesh, transmitter (sun end) &rarr; rectenna (Earth end) &nbsp;|&nbsp; no lasers to Earth — power hops safely through the mesh instead<br/>
+  dashed line through the sun = its direction of travel relative to the galaxy (foundry sits on the forward half)
+</div>
+<div id="info-panel">
+  <span class="close" id="info-close">✕</span>
+  <h2 id="info-name">—</h2>
+  <div class="kind" id="info-kind">—</div>
+  <div id="info-body"></div>
 </div>
 
 <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
@@ -67,12 +92,33 @@ scene.add(new THREE.AmbientLight(0x404050, 1.2));
 const sunLight = new THREE.PointLight(0xffffff, 2.2, 0, 0);
 scene.add(sunLight);
 
+// ---------- selection system ----------
+const selectables = []; // hitbox meshes registered for raycasting
+
+function makeSelectable(mesh, info, hitboxRadius) {
+  mesh.userData.info = info;
+  const radius = hitboxRadius ?? (mesh.geometry.parameters.radius * 1.5);
+  const hitbox = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 8, 8),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  hitbox.userData.selectTarget = mesh;
+  mesh.add(hitbox);
+  selectables.push(hitbox);
+  return mesh;
+}
+
 // ---------- sun ----------
 const sun = new THREE.Mesh(
   new THREE.SphereGeometry(4, 32, 32),
   new THREE.MeshBasicMaterial({ color: 0xffdd66 })
 );
 scene.add(sun);
+makeSelectable(sun, {
+  name: "Sun",
+  kind: "Star",
+  function: "G-type star at the center of the system. Sole power source for the network — every solar collector and device ultimately draws its energy budget from here.",
+});
 
 // ---------- helper: circular orbit path ring ----------
 function makeOrbitRing(radius, color = 0x2a3a55) {
@@ -93,14 +139,14 @@ function makeOrbitRing(radius, color = 0x2a3a55) {
 // ---------- planets (artistic scale, not to real scale) ----------
 // dist, size, color, orbital period (relative — bigger = slower)
 const PLANETS = [
-  { name: "Mercury", dist: 8,  size: 0.4, color: 0x9a9a9a, period: 6  },
-  { name: "Venus",   dist: 11, size: 0.6, color: 0xd9b38c, period: 10 },
-  { name: "Earth",   dist: 15, size: 0.65, color: 0x4d90fe, period: 16 },
-  { name: "Mars",    dist: 19, size: 0.5, color: 0xd1512d, period: 26 },
-  { name: "Jupiter", dist: 26, size: 1.8, color: 0xd8ae70, period: 60 },
-  { name: "Saturn",  dist: 33, size: 1.5, color: 0xe0c88a, period: 90 },
-  { name: "Uranus",  dist: 39, size: 1.1, color: 0x9fdfe0, period: 130 },
-  { name: "Neptune", dist: 45, size: 1.1, color: 0x5b7fe0, period: 165 },
+  { name: "Mercury", dist: 8,  size: 0.4, color: 0x9a9a9a, period: 6,   desc: "Innermost planet. Closest natural body to the sun — a candidate site for high-intensity solar collection infrastructure." },
+  { name: "Venus",   dist: 11, size: 0.6, color: 0xd9b38c, period: 10,  desc: "Second planet from the sun. No devices deployed here yet." },
+  { name: "Earth",   dist: 15, size: 0.65, color: 0x4d90fe, period: 16, desc: "Home world. Anchors a laser-linked relay network of orbiting devices (see the green dots)." },
+  { name: "Mars",    dist: 19, size: 0.5, color: 0xd1512d, period: 26,  desc: "Fourth planet. No devices deployed here yet." },
+  { name: "Jupiter", dist: 26, size: 1.8, color: 0xd8ae70, period: 60,  desc: "Largest planet in the system. No devices deployed here yet." },
+  { name: "Saturn",  dist: 33, size: 1.5, color: 0xe0c88a, period: 90,  desc: "Ringed gas giant. No devices deployed here yet." },
+  { name: "Uranus",  dist: 39, size: 1.1, color: 0x9fdfe0, period: 130, desc: "Ice giant, tilted on its side. No devices deployed here yet." },
+  { name: "Neptune", dist: 45, size: 1.1, color: 0x5b7fe0, period: 165, desc: "Outermost planet. No devices deployed here yet." },
 ];
 
 const planets = PLANETS.map((p) => {
@@ -110,6 +156,7 @@ const planets = PLANETS.map((p) => {
     new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.8 })
   );
   scene.add(mesh);
+  makeSelectable(mesh, { name: p.name, kind: "Planet", function: p.desc });
   return { ...p, angle: Math.random() * Math.PI * 2, mesh };
 });
 
@@ -128,6 +175,13 @@ for (let i = 0; i < DEVICE_COUNT; i++) {
     new THREE.MeshBasicMaterial({ color: 0x66ffcc })
   );
   earthAnchor.add(dot);
+  makeSelectable(dot, {
+    name: `Relay Satellite ${i + 1}`,
+    kind: "Device",
+    deviceType: "relay",
+    status: "active",
+    function: "Orbits Earth as part of a laser-linked relay mesh. Passes data/position along the ring network to its two neighboring devices.",
+  }, 0.5);
   devices.push({
     mesh: dot,
     angle: (i / DEVICE_COUNT) * Math.PI * 2,
@@ -146,10 +200,330 @@ for (let i = 0; i < DEVICE_COUNT; i++) {
   linkLines.push(line);
 }
 
+// ---------- energy collection satellites, orbiting the sun directly ----------
+const COLLECTOR_COUNT = 10;
+const COLLECTOR_DIST = 6; // tucked inside Mercury's orbit for max sun exposure
+scene.add(makeOrbitRing(COLLECTOR_DIST, 0xffcc55));
+
+// energy processing devices are mostly mirrors: they reflect sunlight rather than
+// generating power themselves, so they get a reflective material instead of a flat color
+const collectors = [];
+for (let i = 0; i < COLLECTOR_COUNT; i++) {
+  const dot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 10, 10),
+    new THREE.MeshStandardMaterial({ color: 0xdbe8f2, metalness: 1, roughness: 0.15, emissive: 0x161a20 })
+  );
+  scene.add(dot);
+  makeSelectable(dot, {
+    name: `Mirror ${i + 1}`,
+    kind: "Device",
+    deviceType: "mirror",
+    status: "active",
+    function: "Rotates around the sun reflecting sunlight rather than generating power itself. Shares position with its two ring neighbors via photon links, and reflects light in line toward its paired diamond lens for amplification.",
+  }, 0.6);
+  collectors.push({
+    mesh: dot,
+    angle: (i / COLLECTOR_COUNT) * Math.PI * 2,
+    dist: COLLECTOR_DIST,
+    speed: 0.35, // slow, shared orbital band around the sun
+  });
+}
+
+// photon links: ring network sharing reflected light between neighboring mirrors
+const collectorLinks = [];
+for (let i = 0; i < COLLECTOR_COUNT; i++) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+  const mat = new THREE.LineBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.5 });
+  const line = new THREE.Line(geo, mat);
+  scene.add(line);
+  collectorLinks.push(line);
+}
+
+// ---------- concentrated solar foundry: static focal point ----------
+// Fixed in space near the sun (does not orbit) — every collector's diamond lens
+// redirects that collector's gathered light inward toward this one shared point.
+//
+// Positioned in front of the sun along its direction of travel relative to the
+// galaxy (a simplified stand-in for the solar apex, roughly toward Cygnus/Hercules).
+// The real galactic plane sits ~60° from the ecliptic, so this direction is tilted
+// well out of the planets' orbital (XZ) plane rather than lying flat within it.
+const FOUNDRY_DIST = 7; // still close to the sun, inside Mercury's orbit
+const GALACTIC_TILT = THREE.MathUtils.degToRad(55); // vs. ecliptic plane
+const GALACTIC_AZIMUTH = THREE.MathUtils.degToRad(40);
+const GALACTIC_TRAVEL_DIR = new THREE.Vector3(
+  Math.cos(GALACTIC_TILT) * Math.cos(GALACTIC_AZIMUTH),
+  Math.sin(GALACTIC_TILT),
+  Math.cos(GALACTIC_TILT) * Math.sin(GALACTIC_AZIMUTH)
+).normalize();
+const FOUNDRY_POS = GALACTIC_TRAVEL_DIR.clone().multiplyScalar(FOUNDRY_DIST);
+
+// galactic path: a line through the sun along its direction of travel relative to
+// the galaxy — the foundry sits on the forward half of this same line
+const GALACTIC_LINE_LENGTH = 60; // extends well past Neptune's orbit (45) for visibility
+{
+  const behind = GALACTIC_TRAVEL_DIR.clone().multiplyScalar(-GALACTIC_LINE_LENGTH);
+  const ahead = GALACTIC_TRAVEL_DIR.clone().multiplyScalar(GALACTIC_LINE_LENGTH);
+  const geo = new THREE.BufferGeometry().setFromPoints([behind, ahead]); // passes through the sun at the origin
+  const mat = new THREE.LineDashedMaterial({ color: 0x6f85a3, transparent: true, opacity: 0.5, dashSize: 1.5, gapSize: 1 });
+  const galacticLine = new THREE.Line(geo, mat);
+  galacticLine.computeLineDistances(); // required for dashed materials to render dashes
+  scene.add(galacticLine);
+  // not selectable — a reference line, not a device (consistent with orbit-path rings)
+}
+
+const foundry = new THREE.Mesh(
+  new THREE.OctahedronGeometry(0.35, 0),
+  new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xff8833, emissiveIntensity: 1.2, roughness: 0.3 })
+);
+foundry.position.copy(FOUNDRY_POS);
+scene.add(foundry);
+makeSelectable(foundry, {
+  name: "Solar Foundry",
+  kind: "Structure",
+  deviceType: "foundry",
+  status: "active",
+  function: "Static focal point near the sun — does not orbit. Positioned in front of the sun along its direction of travel relative to the galaxy. Every mirror's diamond lens amplifies that mirror's reflected light onto this single point at extreme temperature, powering light-driven material processing.",
+}, 0.9);
+
+// one diamond lens per mirror, positioned in line on the straight path between
+// that (moving) mirror and the (static) foundry — as the mirror orbits, its lens
+// slides along with it, staying a fixed real-world distance away (spec calls for 500m).
+//
+// This scene uses a stylized, not-to-scale unit system (see spec.md), anchored here
+// off the sun: its scene radius is 4 units for a real radius of ~696,000 km, so
+// 1 scene unit ≈ 174,000 km. 500m is therefore far smaller than a pixel at this
+// scale — the true distance is kept below and clamped up to a minimum visible gap
+// so the lens renders as a distinct object next to its mirror rather than overlapping it.
+const KM_PER_SCENE_UNIT = 696000 / 4;
+const LENS_OFFSET_KM = 0.5; // 500 meters
+const LENS_MIN_VISIBLE_OFFSET = 0.65; // scene units — visibility floor, not the true distance
+const LENS_OFFSET = Math.max(LENS_OFFSET_KM / KM_PER_SCENE_UNIT, LENS_MIN_VISIBLE_OFFSET);
+const lenses = [];
+for (let i = 0; i < COLLECTOR_COUNT; i++) {
+  const lensGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.08, 16); // thin flat disc = "1cm thick" diamond lens
+  lensGeo.rotateX(Math.PI / 2); // axis -> local Z, so lookAt() faces the flat side along the beam
+  const lens = new THREE.Mesh(
+    lensGeo,
+    new THREE.MeshPhysicalMaterial({
+      color: 0xbdfcff, transparent: true, opacity: 0.55,
+      roughness: 0.05, metalness: 0, transmission: 0.6, clearcoat: 1,
+    })
+  );
+  scene.add(lens);
+  makeSelectable(lens, {
+    name: `Diamond Lens ${i + 1}`,
+    kind: "Device",
+    deviceType: "diamond-lens",
+    status: "active",
+    function: "1cm-thick diamond magnification lens, positioned 500m from Mirror " + (i + 1) + " along the line toward the static foundry. Amplifies that mirror's reflected light and focuses it onward across the remaining distance to the foundry; does not generate power itself.",
+  }, 0.45);
+
+  const inGeo = new THREE.BufferGeometry();
+  inGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+  const inBeam = new THREE.Line(inGeo, new THREE.LineBasicMaterial({ color: 0xffcc55, transparent: true, opacity: 0.5 }));
+  scene.add(inBeam);
+
+  const outGeo = new THREE.BufferGeometry();
+  outGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+  const outBeam = new THREE.Line(outGeo, new THREE.LineBasicMaterial({ color: 0xfff4c0, transparent: true, opacity: 0.85 }));
+  scene.add(outBeam);
+
+  lenses.push({ mesh: lens, collector: collectors[i], inBeam, outBeam });
+}
+
+// ---------- microwave power relay mesh: foundry -> Earth ----------
+// Not a laser: a direct high-power beam from the sun straight to Earth would be
+// dangerous. Instead the foundry's energy goes out as a low-intensity microwave
+// beam, hopping through a distributed mesh of fixed relay stations so no single
+// leg ever needs to be a concentrated, hazardous beam. Ends at a rectenna
+// (rectifying antenna) in Earth orbit, which converts the microwaves back to power.
+
+const transmitter = new THREE.Mesh(
+  new THREE.ConeGeometry(0.3, 0.5, 12),
+  new THREE.MeshStandardMaterial({ color: 0x8a6bff, metalness: 0.6, roughness: 0.3, emissive: 0x2a1a55, emissiveIntensity: 0.7 })
+);
+transmitter.position.copy(FOUNDRY_POS).add(new THREE.Vector3(0.6, 0, 0));
+scene.add(transmitter);
+makeSelectable(transmitter, {
+  name: "Power Transmitter",
+  kind: "Structure",
+  deviceType: "microwave-transmitter",
+  status: "active",
+  function: "Phased-array microwave transmitter co-located with the foundry. Converts concentrated solar energy into a tightly-beamed, low-intensity microwave signal — sent hop-to-hop through the relay mesh rather than as one high-power beam straight at Earth.",
+}, 0.6);
+
+const rectenna = new THREE.Mesh(
+  new THREE.BoxGeometry(0.55, 0.06, 0.55),
+  new THREE.MeshStandardMaterial({ color: 0x66e0c4, metalness: 0.4, roughness: 0.4, emissive: 0x0c3a30, emissiveIntensity: 0.6 })
+);
+rectenna.position.set(-2.4, 0, 0); // fixed slot in Earth's local frame, doesn't need to orbit independently
+earthAnchor.add(rectenna);
+makeSelectable(rectenna, {
+  name: "Rectenna",
+  kind: "Device",
+  deviceType: "rectenna",
+  status: "active",
+  function: "Rectifying antenna array in Earth orbit. Converts the incoming microwave beam back into usable power. The relay mesh's final hop continuously re-aims to track it as Earth orbits the sun.",
+}, 0.55);
+
+// scattered fixed relay stations "everywhere" between the transmitter and Earth's orbit —
+// first and last are anchored near each end, the rest are strewn through the space between
+const RELAY_COUNT = 12;
+const relayNodes = [];
+for (let i = 0; i < RELAY_COUNT; i++) {
+  const tRadial =
+    i === 0 ? 0.08 :
+    i === RELAY_COUNT - 1 ? 0.92 :
+    0.15 + Math.random() * 0.7;
+  const radius = THREE.MathUtils.lerp(FOUNDRY_DIST, earth.dist, tRadial);
+  const angle = Math.random() * Math.PI * 2;
+  const y = FOUNDRY_POS.y * (1 - tRadial) * (0.4 + Math.random() * 0.6);
+  const pos = new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+
+  const node = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xa07bff })
+  );
+  node.position.copy(pos);
+  scene.add(node);
+  makeSelectable(node, {
+    name: `Power Relay ${i + 1}`,
+    kind: "Device",
+    deviceType: "power-relay",
+    status: "active",
+    function: "Fixed microwave relay station, one node in a distributed mesh moving energy from the Power Transmitter near the sun to Earth's Rectenna. Receives a beam from a neighboring hop and retransmits it onward — keeping every leg short so no single beam is ever concentrated or dangerous.",
+  }, 0.45);
+
+  relayNodes.push({ mesh: node, pos });
+}
+
+function nearestIndices(pos, nodes, excludeIndex, k) {
+  return nodes
+    .map((n, idx) => ({ idx, d: idx === excludeIndex ? Infinity : pos.distanceTo(n.pos) }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, k)
+    .map((e) => e.idx);
+}
+
+function addStaticLink(a, b, color, opacity) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([a.x, a.y, a.z, b.x, b.y, b.z]), 3));
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+  scene.add(new THREE.Line(geo, mat));
+}
+
+// mesh links: each relay connects to its 2 nearest neighbors — an organic web of
+// "different lines" rather than one straight chain, echoing how the mesh can
+// reroute power along alternate paths
+const meshLinkPairs = new Set();
+for (let i = 0; i < RELAY_COUNT; i++) {
+  for (const j of nearestIndices(relayNodes[i].pos, relayNodes, i, 2)) {
+    meshLinkPairs.add(i < j ? `${i}-${j}` : `${j}-${i}`);
+  }
+}
+for (const key of meshLinkPairs) {
+  const [ai, bi] = key.split("-").map(Number);
+  addStaticLink(relayNodes[ai].pos, relayNodes[bi].pos, 0xa07bff, 0.35);
+}
+
+// transmitter's uplink into the mesh (static — the transmitter doesn't move)
+addStaticLink(
+  transmitter.position,
+  relayNodes[nearestIndices(transmitter.position, relayNodes, -1, 1)[0]].pos,
+  0xfff4c0,
+  0.7
+);
+
+// downlink to the rectenna is dynamic: as Earth orbits, it re-aims to whichever
+// relay node is currently nearest
+const downlinkGeo = new THREE.BufferGeometry();
+downlinkGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+const downlinkLine = new THREE.Line(downlinkGeo, new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.8 }));
+scene.add(downlinkLine);
+
+// ---------- click-to-select ----------
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+let selected = null;
+let highlightRing = null;
+let pointerDownPos = null;
+
+const infoPanel = document.getElementById("info-panel");
+const infoName = document.getElementById("info-name");
+const infoKind = document.getElementById("info-kind");
+const infoBody = document.getElementById("info-body");
+document.getElementById("info-close").addEventListener("click", () => selectObject(null));
+
+function selectObject(mesh) {
+  if (highlightRing) {
+    highlightRing.parent?.remove(highlightRing);
+    highlightRing.geometry.dispose();
+    highlightRing.material.dispose();
+    highlightRing = null;
+  }
+  selected = mesh;
+
+  if (!mesh) {
+    infoPanel.classList.remove("open");
+    return;
+  }
+
+  if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+  const r = mesh.geometry.boundingSphere.radius * 1.8;
+  highlightRing = new THREE.Mesh(
+    new THREE.SphereGeometry(r, 20, 20),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.6 })
+  );
+  scene.add(highlightRing);
+  mesh.getWorldPosition(highlightRing.position);
+
+  const info = mesh.userData.info;
+  infoName.textContent = info.name;
+  infoKind.textContent = info.kind + (info.deviceType ? ` · ${info.deviceType}` : "");
+  infoBody.innerHTML = "";
+  if (info.status) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span class="label">status:</span> ${info.status}`;
+    infoBody.appendChild(row);
+  }
+  const fnRow = document.createElement("div");
+  fnRow.className = "row";
+  fnRow.textContent = info.function;
+  infoBody.appendChild(fnRow);
+  infoPanel.classList.add("open");
+}
+
+renderer.domElement.addEventListener("pointerdown", (e) => {
+  pointerDownPos = { x: e.clientX, y: e.clientY };
+});
+
+renderer.domElement.addEventListener("pointerup", (e) => {
+  if (!pointerDownPos) return;
+  const dx = e.clientX - pointerDownPos.x;
+  const dy = e.clientY - pointerDownPos.y;
+  pointerDownPos = null;
+  if (Math.hypot(dx, dy) > 4) return; // was a drag, not a click
+
+  pointerNdc.x = (e.clientX / innerWidth) * 2 - 1;
+  pointerNdc.y = -(e.clientY / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointerNdc, camera);
+  const hits = raycaster.intersectObjects(selectables, false);
+  if (hits.length > 0) {
+    selectObject(hits[0].object.userData.selectTarget);
+  } else {
+    selectObject(null);
+  }
+});
+
 // ---------- animation loop ----------
 const clock = new THREE.Clock();
 const tmpA = new THREE.Vector3();
 const tmpB = new THREE.Vector3();
+const tmpLensPos = new THREE.Vector3();
+const tmpLensDir = new THREE.Vector3();
+const tmpRectenna = new THREE.Vector3();
 
 function animate() {
   requestAnimationFrame(animate);
@@ -169,6 +543,62 @@ function animate() {
   for (const d of devices) {
     d.angle += d.speed * dt;
     d.mesh.position.set(Math.cos(d.angle) * 2.4, 0, Math.sin(d.angle) * 2.4);
+  }
+
+  // rectenna downlink re-aims to whichever relay node is currently nearest, as Earth moves
+  rectenna.getWorldPosition(tmpRectenna);
+  let nearestRelay = relayNodes[0];
+  let nearestRelayDist = Infinity;
+  for (const node of relayNodes) {
+    const d = tmpRectenna.distanceTo(node.pos);
+    if (d < nearestRelayDist) { nearestRelayDist = d; nearestRelay = node; }
+  }
+  {
+    const arr = downlinkLine.geometry.attributes.position.array;
+    arr[0] = tmpRectenna.x; arr[1] = tmpRectenna.y; arr[2] = tmpRectenna.z;
+    arr[3] = nearestRelay.pos.x; arr[4] = nearestRelay.pos.y; arr[5] = nearestRelay.pos.z;
+    downlinkLine.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // solar collectors orbit the sun directly
+  for (const c of collectors) {
+    c.angle += c.speed * dt;
+    c.mesh.position.set(Math.cos(c.angle) * c.dist, 0, Math.sin(c.angle) * c.dist);
+  }
+
+  // photon links: ring network sharing light between neighboring collectors
+  for (let i = 0; i < COLLECTOR_COUNT; i++) {
+    const a = collectors[i].mesh.position;
+    const b = collectors[(i + 1) % COLLECTOR_COUNT].mesh.position;
+    const arr = collectorLinks[i].geometry.attributes.position.array;
+    arr[0] = a.x; arr[1] = a.y; arr[2] = a.z;
+    arr[3] = b.x; arr[4] = b.y; arr[5] = b.z;
+    collectorLinks[i].geometry.attributes.position.needsUpdate = true;
+  }
+
+  // each lens sits a fixed real-world distance (500m -> LENS_OFFSET) from its mirror,
+  // in line toward the static foundry; beams show light flowing mirror -> lens -> foundry
+  for (const l of lenses) {
+    const cPos = l.collector.mesh.position;
+    tmpLensDir.copy(FOUNDRY_POS).sub(cPos).normalize();
+    tmpLensPos.copy(cPos).addScaledVector(tmpLensDir, LENS_OFFSET);
+    l.mesh.position.copy(tmpLensPos);
+    l.mesh.lookAt(FOUNDRY_POS);
+
+    let arr = l.inBeam.geometry.attributes.position.array;
+    arr[0] = cPos.x; arr[1] = cPos.y; arr[2] = cPos.z;
+    arr[3] = tmpLensPos.x; arr[4] = tmpLensPos.y; arr[5] = tmpLensPos.z;
+    l.inBeam.geometry.attributes.position.needsUpdate = true;
+
+    arr = l.outBeam.geometry.attributes.position.array;
+    arr[0] = tmpLensPos.x; arr[1] = tmpLensPos.y; arr[2] = tmpLensPos.z;
+    arr[3] = FOUNDRY_POS.x; arr[4] = FOUNDRY_POS.y; arr[5] = FOUNDRY_POS.z;
+    l.outBeam.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // keep the selection highlight ring pinned to its (possibly moving) target
+  if (selected && highlightRing) {
+    selected.getWorldPosition(highlightRing.position);
   }
 
   // laser links follow device world positions each frame
