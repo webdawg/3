@@ -58,7 +58,7 @@
   black sphere behind the sun = Infinite Compute, directly opposite the foundry &nbsp;|&nbsp; red dots/lines = laser relay chain powering it (safe here — far side of the sun from Earth)<br/>
   faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line, powered by the same Laser Transmitter via a multi-hop long-haul relay chain (not one bare beam)<br/>
   mint dishes between Mercury and Venus = Solar Observatories, orbiting the sun and sweeping between deep space and the sun itself, searching for a galactic data transmission<br/>
-  pale cluster beyond Earth = 1000-unit JWST telescope swarm at the Sun-Earth L2 point, powered by a direct tap off Earth's Rectenna<br/>
+  pale cluster on the far side of the sun from Earth = 1000-unit JWST telescope swarm at the Sun-Earth L3 point, powered via the relay mesh (not a direct sun-crossing line to Earth)<br/>
   toolbar below: speed &minus;/+ scales simulation rate (it never pauses) &nbsp;|&nbsp; labels button toggles the on-screen structure titles
 </div>
 <div id="toolbar">
@@ -987,46 +987,53 @@ for (let i = 0; i < OBS_COUNT; i++) {
   });
 }
 
-// ---------- JWST telescope swarm: 1000-unit network at the Sun-Earth L2 point ----------
-// The real James Webb Space Telescope orbits Sun-Earth L2, a halo point beyond Earth
-// (opposite the sun) that co-rotates with Earth's orbit. Goal 1 imagined exactly this
-// kind of thing — "millions of independently-built, static space telescopes that can
-// act as one combined instrument" — this is a concrete, smaller-scale (1000-unit)
-// instance of that idea. Powered by a direct relay tap off Earth's existing Rectenna,
-// not a separate power source, per "power them using our network."
+// ---------- JWST telescope swarm: 1000-unit network at the Sun-Earth L3 point ----------
+// Originally built at L2 (beyond Earth); relocated to L3 — the point on the far side of
+// the sun from Earth, along the Earth-Sun line extended, at approximately Earth's own
+// orbital distance. Computed as the exact mirror of Earth's current position through the
+// origin, which automatically keeps it co-rotating with Earth's orbit like a real
+// Lagrange point. Unlike L2, L3 needs no small clamped-up offset — it's already tens of
+// units from Earth at this scene's scale, well past the scale problem the diamond lens's
+// 500m gap (Goal 3) and the original L2 offset ran into.
 //
-// L2's real ~1.5-million-km offset beyond Earth hits the same scale problem the diamond
-// lens's 500m gap did (Goal 3): negligible at this scene's stylized distance scale, so
-// it's clamped up to a small but clearly visible offset instead of the true proportional
-// value.
-const L2_OFFSET = 1.1;
+// Goal 1 imagined exactly this kind of thing — "millions of independently-built, static
+// space telescopes that can act as one combined instrument" — this is a concrete,
+// smaller-scale (1000-unit) instance of that idea.
+//
+// Power routing: a straight line from the Earth Rectenna to L3 would pass directly
+// through the sun — the same "sun as a physical obstruction" problem Goal 6 solved for
+// the Survey Ship's power link. Rather than building a dedicated bypass chain for this
+// one link, the L3 Relay Station instead taps the existing power relay mesh, the same
+// nearest-relay-node downlink mechanism every planet's rectenna already uses (Goal 9) —
+// its scattered, non-planar node placement naturally avoids a straight line through the
+// sun's center, the same way it already does for every other consumer on the mesh.
 const JWST_COUNT = 1000;
 const JWST_SWARM_RADIUS = 1.5; // loose halo cluster around the relay station, echoing JWST's real halo orbit
 
-const l2Relay = new THREE.Mesh(
+const l3Relay = new THREE.Mesh(
   new THREE.OctahedronGeometry(0.22, 0),
   new THREE.MeshStandardMaterial({ color: 0x66e0c4, metalness: 0.4, roughness: 0.4, emissive: 0x0c3a30, emissiveIntensity: 0.6 })
 );
-scene.add(l2Relay);
-makeSelectable(l2Relay, {
-  name: "L2 Relay Station",
+scene.add(l3Relay);
+makeSelectable(l3Relay, {
+  name: "L3 Relay Station",
   kind: "Device",
   deviceType: "power-relay",
   status: "active",
-  function: "Fixed power relay parked at the Sun-Earth L2 point, drawing directly from the Earth Rectenna. Distributes power locally to the 1000-unit JWST telescope swarm halo-orbiting around it.",
+  function: "Fixed power relay parked at the Sun-Earth L3 point, on the far side of the sun from Earth. Draws power from the nearest node in the power relay mesh (a direct line to Earth would pass through the sun) and distributes it locally to the 1000-unit JWST telescope swarm halo-orbiting around it.",
 }, 0.6);
 
-const l2PowerLink = new THREE.Line(
+const l3PowerLink = new THREE.Line(
   new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3)),
   new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.7 })
 );
-scene.add(l2PowerLink);
-makeLineSelectable(l2PowerLink, {
-  name: "L2 Power Relay Link",
+scene.add(l3PowerLink);
+makeLineSelectable(l3PowerLink, {
+  name: "L3 Power Downlink",
   kind: "Link",
   deviceType: "power-downlink",
   status: "active",
-  function: "Direct power tap from the Earth Rectenna out to the L2 Relay Station, powering the entire JWST telescope swarm from Earth's existing network rather than a separate source.",
+  function: "The L3 Relay Station's link into the power relay mesh — continuously re-aims to whichever relay node is currently nearest, the same mechanism every planet's rectenna uses, rather than a direct (sun-crossing) line to Earth.",
 });
 
 // one shared geometry/material and a single InstancedMesh for all 1000 units — a
@@ -1040,7 +1047,7 @@ jwstSwarm.userData.isJwstSwarm = true;
 scene.add(jwstSwarm);
 selectables.push(jwstSwarm);
 
-// each instance's fixed local offset from the L2 relay station — set once; moving the
+// each instance's fixed local offset from the L3 relay station — set once; moving the
 // whole swarm each frame is then just one position update (see animate() below),
 // not 1000 individual matrix recomputations
 const jwstOffsets = [];
@@ -1071,7 +1078,7 @@ function jwstInfo(instanceId) {
     kind: "Device",
     deviceType: "space-telescope",
     status: "active",
-    function: "One unit in a 1000-telescope swarm halo-orbiting the Sun-Earth L2 point — the same location the real James Webb Space Telescope occupies. Independently tracked like every device here, but the swarm functions as one combined instrument, per Goal 1's original vision of many static telescopes acting as one. Powered by the L2 Relay Station.",
+    function: "One unit in a 1000-telescope swarm halo-orbiting the Sun-Earth L3 point, on the far side of the sun from Earth (moved here from L2, where the real James Webb Space Telescope actually sits). Independently tracked like every device here, but the swarm functions as one combined instrument, per Goal 1's original vision of many static telescopes acting as one. Powered by the L3 Relay Station.",
   };
 }
 
@@ -1306,18 +1313,26 @@ function animate() {
     shipyardPowerLink.geometry.attributes.position.needsUpdate = true;
   }
 
-  // L2 point sits beyond Earth, opposite the sun, and co-rotates with Earth's orbit —
-  // the whole JWST swarm moves as one group (see jwstOffsets above), so this is a
-  // single position update rather than 1000 individual ones
-  tmpB.copy(earth.mesh.position).normalize();
-  tmpA.copy(earth.mesh.position).addScaledVector(tmpB, L2_OFFSET);
-  l2Relay.position.copy(tmpA);
+  // L3 sits on the far side of the sun from Earth — the exact mirror of Earth's
+  // current position through the origin — and co-rotates with Earth's orbit. The whole
+  // JWST swarm moves as one group (see jwstOffsets above), so this is a single position
+  // update rather than 1000 individual ones.
+  tmpA.copy(earth.mesh.position).negate();
+  l3Relay.position.copy(tmpA);
   jwstSwarm.position.copy(tmpA);
   {
-    const arr = l2PowerLink.geometry.attributes.position.array;
-    arr[0] = rectenna.position.x; arr[1] = rectenna.position.y; arr[2] = rectenna.position.z;
-    arr[3] = tmpA.x; arr[4] = tmpA.y; arr[5] = tmpA.z;
-    l2PowerLink.geometry.attributes.position.needsUpdate = true;
+    // re-aims to the nearest power-relay-mesh node each frame, same mechanism as every
+    // planet's rectenna — not a direct line to Earth, which would cross the sun
+    let nearestRelay = relayNodes[0];
+    let nearestRelayDist = Infinity;
+    for (const node of relayNodes) {
+      const d = tmpA.distanceTo(node.pos);
+      if (d < nearestRelayDist) { nearestRelayDist = d; nearestRelay = node; }
+    }
+    const arr = l3PowerLink.geometry.attributes.position.array;
+    arr[0] = tmpA.x; arr[1] = tmpA.y; arr[2] = tmpA.z;
+    arr[3] = nearestRelay.pos.x; arr[4] = nearestRelay.pos.y; arr[5] = nearestRelay.pos.z;
+    l3PowerLink.geometry.attributes.position.needsUpdate = true;
   }
 
   // mining ships: autonomous state machine — outbound to a target body, pause to
