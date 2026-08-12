@@ -58,6 +58,7 @@
   black sphere behind the sun = Infinite Compute, directly opposite the foundry &nbsp;|&nbsp; red dots/lines = laser relay chain powering it (safe here — far side of the sun from Earth)<br/>
   faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line, powered by the same Laser Transmitter via a multi-hop long-haul relay chain (not one bare beam)<br/>
   mint dishes between Mercury and Venus = Solar Observatories, orbiting the sun and sweeping between deep space and the sun itself, searching for a galactic data transmission<br/>
+  pale cluster beyond Earth = 1000-unit JWST telescope swarm at the Sun-Earth L2 point, powered by a direct tap off Earth's Rectenna<br/>
   toolbar below: speed &minus;/+ scales simulation rate (it never pauses) &nbsp;|&nbsp; labels button toggles the on-screen structure titles
 </div>
 <div id="toolbar">
@@ -986,11 +987,100 @@ for (let i = 0; i < OBS_COUNT; i++) {
   });
 }
 
+// ---------- JWST telescope swarm: 1000-unit network at the Sun-Earth L2 point ----------
+// The real James Webb Space Telescope orbits Sun-Earth L2, a halo point beyond Earth
+// (opposite the sun) that co-rotates with Earth's orbit. Goal 1 imagined exactly this
+// kind of thing — "millions of independently-built, static space telescopes that can
+// act as one combined instrument" — this is a concrete, smaller-scale (1000-unit)
+// instance of that idea. Powered by a direct relay tap off Earth's existing Rectenna,
+// not a separate power source, per "power them using our network."
+//
+// L2's real ~1.5-million-km offset beyond Earth hits the same scale problem the diamond
+// lens's 500m gap did (Goal 3): negligible at this scene's stylized distance scale, so
+// it's clamped up to a small but clearly visible offset instead of the true proportional
+// value.
+const L2_OFFSET = 1.1;
+const JWST_COUNT = 1000;
+const JWST_SWARM_RADIUS = 1.5; // loose halo cluster around the relay station, echoing JWST's real halo orbit
+
+const l2Relay = new THREE.Mesh(
+  new THREE.OctahedronGeometry(0.22, 0),
+  new THREE.MeshStandardMaterial({ color: 0x66e0c4, metalness: 0.4, roughness: 0.4, emissive: 0x0c3a30, emissiveIntensity: 0.6 })
+);
+scene.add(l2Relay);
+makeSelectable(l2Relay, {
+  name: "L2 Relay Station",
+  kind: "Device",
+  deviceType: "power-relay",
+  status: "active",
+  function: "Fixed power relay parked at the Sun-Earth L2 point, drawing directly from the Earth Rectenna. Distributes power locally to the 1000-unit JWST telescope swarm halo-orbiting around it.",
+}, 0.6);
+
+const l2PowerLink = new THREE.Line(
+  new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3)),
+  new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.7 })
+);
+scene.add(l2PowerLink);
+makeLineSelectable(l2PowerLink, {
+  name: "L2 Power Relay Link",
+  kind: "Link",
+  deviceType: "power-downlink",
+  status: "active",
+  function: "Direct power tap from the Earth Rectenna out to the L2 Relay Station, powering the entire JWST telescope swarm from Earth's existing network rather than a separate source.",
+});
+
+// one shared geometry/material and a single InstancedMesh for all 1000 units — a
+// draw call per individual telescope would be wasteful at this count; instancing keeps
+// it to one, while THREE.InstancedMesh still supports per-instance raycasting (via
+// the isJwstSwarm flag + instanceId, handled specially in the click handler below)
+const jwstGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.04); // stylized sunshield + bus
+const jwstMaterial = new THREE.MeshStandardMaterial({ color: 0xf2e6c9, metalness: 0.3, roughness: 0.5, emissive: 0x2a2210, emissiveIntensity: 0.4 });
+const jwstSwarm = new THREE.InstancedMesh(jwstGeometry, jwstMaterial, JWST_COUNT);
+jwstSwarm.userData.isJwstSwarm = true;
+scene.add(jwstSwarm);
+selectables.push(jwstSwarm);
+
+// each instance's fixed local offset from the L2 relay station — set once; moving the
+// whole swarm each frame is then just one position update (see animate() below),
+// not 1000 individual matrix recomputations
+const jwstOffsets = [];
+{
+  const m = new THREE.Matrix4();
+  for (let i = 0; i < JWST_COUNT; i++) {
+    const r = JWST_SWARM_RADIUS * Math.cbrt(Math.random()); // uniform within a sphere, not just on its surface
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const offset = new THREE.Vector3(
+      r * Math.sin(phi) * Math.cos(theta),
+      r * Math.cos(phi),
+      r * Math.sin(phi) * Math.sin(theta)
+    );
+    jwstOffsets.push(offset);
+    m.makeTranslation(offset.x, offset.y, offset.z);
+    jwstSwarm.setMatrixAt(i, m);
+  }
+  jwstSwarm.instanceMatrix.needsUpdate = true;
+}
+
+// info is generated on demand per instance rather than stored as 1000 separate
+// objects — the units are functionally identical members of one swarm, not
+// individually distinct devices with their own history
+function jwstInfo(instanceId) {
+  return {
+    name: `JWST Telescope ${instanceId + 1} / ${JWST_COUNT}`,
+    kind: "Device",
+    deviceType: "space-telescope",
+    status: "active",
+    function: "One unit in a 1000-telescope swarm halo-orbiting the Sun-Earth L2 point — the same location the real James Webb Space Telescope occupies. Independently tracked like every device here, but the swarm functions as one combined instrument, per Goal 1's original vision of many static telescopes acting as one. Powered by the L2 Relay Station.",
+  };
+}
+
 // ---------- click-to-select ----------
 const raycaster = new THREE.Raycaster();
 raycaster.params.Line.threshold = 0.35; // click tolerance for thin energy-network links
 const pointerNdc = new THREE.Vector2();
 let selected = null;
+let selectedJwstIndex = null; // set instead of `selected` when the hit is one instance of the JWST swarm
 let highlightRing = null;
 let pointerDownPos = null;
 
@@ -1000,30 +1090,16 @@ const infoKind = document.getElementById("info-kind");
 const infoBody = document.getElementById("info-body");
 document.getElementById("info-close").addEventListener("click", () => selectObject(null));
 
-function selectObject(mesh) {
+function clearHighlightRing() {
   if (highlightRing) {
     highlightRing.parent?.remove(highlightRing);
     highlightRing.geometry.dispose();
     highlightRing.material.dispose();
     highlightRing = null;
   }
-  selected = mesh;
+}
 
-  if (!mesh) {
-    infoPanel.classList.remove("open");
-    return;
-  }
-
-  if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
-  const r = mesh.geometry.boundingSphere.radius * 1.8;
-  highlightRing = new THREE.Mesh(
-    new THREE.SphereGeometry(r, 20, 20),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.6 })
-  );
-  scene.add(highlightRing);
-  mesh.getWorldPosition(highlightRing.position);
-
-  const info = mesh.userData.info;
+function renderInfoPanel(info) {
   infoName.textContent = info.name;
   infoKind.textContent = info.kind + (info.deviceType ? ` · ${info.deviceType}` : "");
   infoBody.innerHTML = "";
@@ -1038,6 +1114,53 @@ function selectObject(mesh) {
   fnRow.textContent = info.function;
   infoBody.appendChild(fnRow);
   infoPanel.classList.add("open");
+}
+
+function selectObject(mesh, atPoint) {
+  clearHighlightRing();
+  selected = mesh;
+  selectedJwstIndex = null;
+
+  if (!mesh) {
+    infoPanel.classList.remove("open");
+    return;
+  }
+
+  // energy-network links (THREE.Line) never have their own .position — their geometry
+  // stores absolute world coordinates directly — so getWorldPosition() would always
+  // return the origin. Use the actual click point instead, with a small fixed ring.
+  let radius = 0.3;
+  let position = atPoint;
+  if (!mesh.isLine) {
+    if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+    radius = mesh.geometry.boundingSphere.radius * 1.8;
+    position = new THREE.Vector3();
+    mesh.getWorldPosition(position);
+  }
+
+  highlightRing = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 20, 20),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.6 })
+  );
+  scene.add(highlightRing);
+  highlightRing.position.copy(position);
+
+  renderInfoPanel(mesh.userData.info);
+}
+
+function selectJwstInstance(instanceId) {
+  clearHighlightRing();
+  selected = null;
+  selectedJwstIndex = instanceId;
+
+  highlightRing = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.6 })
+  );
+  scene.add(highlightRing);
+  highlightRing.position.copy(jwstSwarm.position).add(jwstOffsets[instanceId]);
+
+  renderInfoPanel(jwstInfo(instanceId));
 }
 
 renderer.domElement.addEventListener("pointerdown", (e) => {
@@ -1056,7 +1179,12 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   raycaster.setFromCamera(pointerNdc, camera);
   const hits = raycaster.intersectObjects(selectables, false);
   if (hits.length > 0) {
-    selectObject(hits[0].object.userData.selectTarget);
+    const hit = hits[0];
+    if (hit.object.userData.isJwstSwarm) {
+      selectJwstInstance(hit.instanceId);
+    } else {
+      selectObject(hit.object.userData.selectTarget, hit.point);
+    }
   } else {
     selectObject(null);
   }
@@ -1178,6 +1306,20 @@ function animate() {
     shipyardPowerLink.geometry.attributes.position.needsUpdate = true;
   }
 
+  // L2 point sits beyond Earth, opposite the sun, and co-rotates with Earth's orbit —
+  // the whole JWST swarm moves as one group (see jwstOffsets above), so this is a
+  // single position update rather than 1000 individual ones
+  tmpB.copy(earth.mesh.position).normalize();
+  tmpA.copy(earth.mesh.position).addScaledVector(tmpB, L2_OFFSET);
+  l2Relay.position.copy(tmpA);
+  jwstSwarm.position.copy(tmpA);
+  {
+    const arr = l2PowerLink.geometry.attributes.position.array;
+    arr[0] = rectenna.position.x; arr[1] = rectenna.position.y; arr[2] = rectenna.position.z;
+    arr[3] = tmpA.x; arr[4] = tmpA.y; arr[5] = tmpA.z;
+    l2PowerLink.geometry.attributes.position.needsUpdate = true;
+  }
+
   // mining ships: autonomous state machine — outbound to a target body, pause to
   // "mine", inbound back to the shipyard, pause to "dock", pick a new target, repeat
   for (const s of miningShips) {
@@ -1259,9 +1401,15 @@ function animate() {
     label.scale.set(label.userData.aspect * s, s, 1);
   }
 
-  // keep the selection highlight ring pinned to its (possibly moving) target
-  if (selected && highlightRing) {
-    selected.getWorldPosition(highlightRing.position);
+  // keep the selection highlight ring pinned to its (possibly moving) target — link
+  // selections are left static at their click point (see selectObject), and JWST
+  // instances track the swarm's group position plus their own fixed offset
+  if (highlightRing) {
+    if (selectedJwstIndex !== null) {
+      highlightRing.position.copy(jwstSwarm.position).add(jwstOffsets[selectedJwstIndex]);
+    } else if (selected && !selected.isLine) {
+      selected.getWorldPosition(highlightRing.position);
+    }
   }
 
   // laser links follow device world positions each frame
