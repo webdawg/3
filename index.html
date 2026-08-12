@@ -58,7 +58,7 @@
   black sphere behind the sun = Infinite Compute, directly opposite the foundry &nbsp;|&nbsp; red dots/lines = laser relay chain powering it (safe here — far side of the sun from Earth)<br/>
   faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line, powered by the same Laser Transmitter via a multi-hop long-haul relay chain (not one bare beam)<br/>
   mint dishes between Mercury and Venus = Solar Observatories, orbiting the sun and sweeping between deep space and the sun itself, searching for a galactic data transmission<br/>
-  pale concave dish on the far side of the sun from Earth = 1000-unit JWST telescope swarm at the Sun-Earth L3 point, every unit facing outward together, powered via the relay mesh<br/>
+  pale concave dish on the far side of the sun from Earth = 1000-unit JWST telescope swarm at the Sun-Earth L3 point, every unit facing outward together, fed by its own dedicated relay chain behind the dish<br/>
   toolbar below: speed &minus;/+ scales simulation rate (it never pauses) &nbsp;|&nbsp; labels button toggles the on-screen structure titles
 </div>
 <div id="toolbar">
@@ -1022,20 +1022,68 @@ makeSelectable(l3Relay, {
   kind: "Device",
   deviceType: "power-relay",
   status: "active",
-  function: "Fixed power relay parked at the Sun-Earth L3 point, on the far side of the sun from Earth. Draws power from the nearest node in the power relay mesh (a direct line to Earth would pass through the sun) and distributes it locally to the 1000-unit JWST telescope swarm arrayed around it as a concave, uniformly-oriented dish.",
+  function: "Fixed power relay parked at the Sun-Earth L3 point, on the far side of the sun from Earth, right behind the JWST swarm's dish. First hop of a dedicated relay chain built solely to power this swarm — see the L3 Feed Relays behind it.",
 }, 0.6);
 
+// dedicated relay chain: rather than tap the shared power relay mesh directly, the L3
+// swarm gets a small network of its own — a few fixed hops that exist only to serve
+// it, positioned behind the dish (opposite the direction the telescopes face, on the
+// sun-facing/concave side). Only the final hop, out to the shared mesh's nearest node,
+// needs to be dynamic; the chain itself rigidly follows the swarm's position and
+// orientation each frame, the same way the dish's own instances do.
+const L3_CHAIN_COUNT = 3;
+const L3_CHAIN_SPACING = 0.55;
+const l3ChainLocalOffsets = [];
+const l3ChainRelays = [];
+for (let i = 1; i <= L3_CHAIN_COUNT; i++) {
+  l3ChainLocalOffsets.push(new THREE.Vector3(0, 0, -(JWST_SWARM_RADIUS + i * L3_CHAIN_SPACING)));
+
+  const relay = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 10, 10),
+    new THREE.MeshStandardMaterial({ color: 0x66e0c4, metalness: 0.4, roughness: 0.4, emissive: 0x0c3a30, emissiveIntensity: 0.6 })
+  );
+  scene.add(relay);
+  makeSelectable(relay, {
+    name: `L3 Feed Relay ${i}`,
+    kind: "Device",
+    deviceType: "power-relay",
+    status: "active",
+    function: `Hop ${i} of ${L3_CHAIN_COUNT} in a dedicated relay chain built solely to power the L3 telescope swarm — not shared with any other consumer on the network. Sits behind the dish, opposite the direction the telescopes face, and rigidly follows the swarm's position and orientation rather than holding a fixed point in space.`,
+  }, 0.4);
+  l3ChainRelays.push(relay);
+}
+
+const l3ChainLinkInfo = {
+  name: "L3 Dedicated Relay Link",
+  kind: "Link",
+  deviceType: "power-downlink",
+  status: "active",
+  function: "One hop in the dedicated relay chain built solely to power the L3 telescope swarm — not shared with any other consumer on the network.",
+};
+const l3ChainLinks = [];
+for (let i = 0; i <= L3_CHAIN_COUNT; i++) {
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3)),
+    new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.7 })
+  );
+  scene.add(line);
+  makeLineSelectable(line, l3ChainLinkInfo);
+  l3ChainLinks.push(line);
+}
+
+// the one dynamic link: the dedicated chain's single tap into the shared power relay
+// mesh, re-aiming each frame to whichever shared node is currently nearest
 const l3PowerLink = new THREE.Line(
   new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3)),
   new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.7 })
 );
 scene.add(l3PowerLink);
 makeLineSelectable(l3PowerLink, {
-  name: "L3 Power Downlink",
+  name: "L3 Network Uplink",
   kind: "Link",
   deviceType: "power-downlink",
   status: "active",
-  function: "The L3 Relay Station's link into the power relay mesh — continuously re-aims to whichever relay node is currently nearest, the same mechanism every planet's rectenna uses, rather than a direct (sun-crossing) line to Earth.",
+  function: "The dedicated L3 relay chain's single tap into the shared power relay mesh — continuously re-aims to whichever shared node is currently nearest, the same mechanism every planet's rectenna uses, rather than a direct (sun-crossing) line to Earth.",
 });
 
 // one shared geometry/material and a single InstancedMesh for all 1000 units — a
@@ -1251,6 +1299,7 @@ const tmpB = new THREE.Vector3();
 const tmpLensPos = new THREE.Vector3();
 const tmpLensDir = new THREE.Vector3();
 const tmpRectenna = new THREE.Vector3();
+const tmpL3Chain = new THREE.Vector3();
 const tmpObsOutward = new THREE.Vector3();
 const tmpObsLookDir = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -1335,17 +1384,32 @@ function animate() {
   jwstSwarm.position.copy(tmpA);
   tmpB.copy(tmpA).normalize();
   jwstSwarm.quaternion.setFromUnitVectors(JWST_LOCAL_AXIS, tmpB);
+
+  // dedicated relay chain rigidly follows the swarm's position + orientation, just
+  // like the dish's own instances — each hop's world position is its fixed local
+  // offset (behind the dish) rotated and translated fresh every frame
+  let l3ChainPrev = l3Relay.position;
+  for (let i = 0; i < L3_CHAIN_COUNT; i++) {
+    tmpL3Chain.copy(l3ChainLocalOffsets[i]).applyQuaternion(jwstSwarm.quaternion).add(tmpA);
+    l3ChainRelays[i].position.copy(tmpL3Chain);
+    const arr = l3ChainLinks[i].geometry.attributes.position.array;
+    arr[0] = l3ChainPrev.x; arr[1] = l3ChainPrev.y; arr[2] = l3ChainPrev.z;
+    arr[3] = l3ChainRelays[i].position.x; arr[4] = l3ChainRelays[i].position.y; arr[5] = l3ChainRelays[i].position.z;
+    l3ChainLinks[i].geometry.attributes.position.needsUpdate = true;
+    l3ChainPrev = l3ChainRelays[i].position;
+  }
   {
-    // re-aims to the nearest power-relay-mesh node each frame, same mechanism as every
-    // planet's rectenna — not a direct line to Earth, which would cross the sun
+    // only the chain's far end taps the shared mesh, re-aiming each frame to whichever
+    // shared node is currently nearest — same mechanism as every planet's rectenna
+    const chainEnd = l3ChainRelays[L3_CHAIN_COUNT - 1].position;
     let nearestRelay = relayNodes[0];
     let nearestRelayDist = Infinity;
     for (const node of relayNodes) {
-      const d = tmpA.distanceTo(node.pos);
+      const d = chainEnd.distanceTo(node.pos);
       if (d < nearestRelayDist) { nearestRelayDist = d; nearestRelay = node; }
     }
     const arr = l3PowerLink.geometry.attributes.position.array;
-    arr[0] = tmpA.x; arr[1] = tmpA.y; arr[2] = tmpA.z;
+    arr[0] = chainEnd.x; arr[1] = chainEnd.y; arr[2] = chainEnd.z;
     arr[3] = nearestRelay.pos.x; arr[4] = nearestRelay.pos.y; arr[5] = nearestRelay.pos.z;
     l3PowerLink.geometry.attributes.position.needsUpdate = true;
   }
