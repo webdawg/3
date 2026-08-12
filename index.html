@@ -1011,6 +1011,10 @@ const JWST_COUNT = 1000;
 const JWST_SWARM_RADIUS = 1.5; // radius of the dish's spherical-cap surface
 const JWST_CAP_ANGLE = THREE.MathUtils.degToRad(50); // how wide the concave dish opens
 const JWST_LOCAL_AXIS = new THREE.Vector3(0, 0, 1); // the axis every unit's local geometry "points" along
+// any candidate power-mesh node within this angle of the swarm's forward direction is
+// excluded from the L3 uplink search — a bit wider than the dish's own 50° cap, so
+// nothing carrying power ever sits inside (or right at the edge of) the telescopes' view
+const L3_FORWARD_EXCLUSION_COS = Math.cos(THREE.MathUtils.degToRad(60));
 
 const l3Relay = new THREE.Mesh(
   new THREE.OctahedronGeometry(0.22, 0),
@@ -1083,7 +1087,7 @@ makeLineSelectable(l3PowerLink, {
   kind: "Link",
   deviceType: "power-downlink",
   status: "active",
-  function: "The dedicated L3 relay chain's single tap into the shared power relay mesh — continuously re-aims to whichever shared node is currently nearest, the same mechanism every planet's rectenna uses, rather than a direct (sun-crossing) line to Earth.",
+  function: "The dedicated L3 relay chain's single tap into the shared power relay mesh — continuously re-aims to whichever shared node is currently nearest, excluding any node inside the telescope swarm's forward field of view, so the power path always approaches from behind and never crosses in front of the dish.",
 });
 
 // one shared geometry/material and a single InstancedMesh for all 1000 units — a
@@ -1300,6 +1304,7 @@ const tmpLensPos = new THREE.Vector3();
 const tmpLensDir = new THREE.Vector3();
 const tmpRectenna = new THREE.Vector3();
 const tmpL3Chain = new THREE.Vector3();
+const tmpL3Dir = new THREE.Vector3();
 const tmpObsOutward = new THREE.Vector3();
 const tmpObsLookDir = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -1400,18 +1405,26 @@ function animate() {
   }
   {
     // only the chain's far end taps the shared mesh, re-aiming each frame to whichever
-    // shared node is currently nearest — same mechanism as every planet's rectenna
+    // shared node is currently nearest — same mechanism as every planet's rectenna —
+    // but candidates inside the swarm's forward field of view are excluded first, so
+    // the power path can only ever approach from behind, never cross in front of the
+    // dish. Recomputed fresh every frame since the forward direction (tmpB) rotates
+    // with L3 as Earth orbits — a fixed exclusion zone would eventually be wrong.
     const chainEnd = l3ChainRelays[L3_CHAIN_COUNT - 1].position;
-    let nearestRelay = relayNodes[0];
+    let nearestRelay = null;
     let nearestRelayDist = Infinity;
     for (const node of relayNodes) {
+      tmpL3Dir.copy(node.pos).sub(tmpA).normalize(); // direction from L3 (not the chain end) to this node
+      if (tmpL3Dir.dot(tmpB) > L3_FORWARD_EXCLUSION_COS) continue; // inside the forward cone — skip it
       const d = chainEnd.distanceTo(node.pos);
       if (d < nearestRelayDist) { nearestRelayDist = d; nearestRelay = node; }
     }
-    const arr = l3PowerLink.geometry.attributes.position.array;
-    arr[0] = chainEnd.x; arr[1] = chainEnd.y; arr[2] = chainEnd.z;
-    arr[3] = nearestRelay.pos.x; arr[4] = nearestRelay.pos.y; arr[5] = nearestRelay.pos.z;
-    l3PowerLink.geometry.attributes.position.needsUpdate = true;
+    if (nearestRelay) {
+      const arr = l3PowerLink.geometry.attributes.position.array;
+      arr[0] = chainEnd.x; arr[1] = chainEnd.y; arr[2] = chainEnd.z;
+      arr[3] = nearestRelay.pos.x; arr[4] = nearestRelay.pos.y; arr[5] = nearestRelay.pos.z;
+      l3PowerLink.geometry.attributes.position.needsUpdate = true;
+    }
   }
 
   // mining ships: autonomous state machine — outbound to a target body, pause to
