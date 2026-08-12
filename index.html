@@ -28,6 +28,24 @@
     color: #6f85a3; font-size: 16px; pointer-events: auto;
   }
   #info-panel .close:hover { color: #fff; }
+  #toolbar {
+    position: fixed; top: 132px; left: 12px; z-index: 15;
+    display: flex; gap: 10px; font: 12px/1.5 monospace; color: #9fb3c8;
+  }
+  #toolbar .group {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(8, 12, 22, 0.88); border: 1px solid #24314a;
+    border-radius: 4px; padding: 4px 8px; pointer-events: auto;
+  }
+  #toolbar button {
+    font: 12px/1 monospace; color: #d7e2f0; background: #182238;
+    border: 1px solid #2f4160; border-radius: 3px; padding: 3px 8px;
+    cursor: pointer;
+  }
+  #toolbar button:hover { background: #24314a; color: #ffdd66; }
+  #toolbar button:disabled { opacity: 0.4; cursor: default; }
+  #toolbar button:disabled:hover { background: #182238; color: #d7e2f0; }
+  #toolbar .readout { min-width: 4.2em; text-align: center; color: #ffdd66; }
 </style>
 </head>
 <body>
@@ -38,7 +56,19 @@
   dashed line through the sun = its direction of travel relative to the galaxy (foundry sits on the forward half)<br/>
   black sphere behind the sun = Infinite Compute, directly opposite the foundry &nbsp;|&nbsp; red dots/lines = laser relay chain powering it (safe here — far side of the sun from Earth)<br/>
   faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line, powered by the same Laser Transmitter via a long bypass relay<br/>
-  mint dishes between Mercury and Venus = Solar Observatories, orbiting the sun and sweeping between deep space and the sun itself, searching for a galactic data transmission
+  mint dishes between Mercury and Venus = Solar Observatories, orbiting the sun and sweeping between deep space and the sun itself, searching for a galactic data transmission<br/>
+  toolbar below: speed &minus;/+ scales simulation rate (it never pauses) &nbsp;|&nbsp; labels button toggles the on-screen structure titles
+</div>
+<div id="toolbar">
+  <div class="group">
+    <span>speed</span>
+    <button id="speed-down" title="slow down">&minus;</button>
+    <span class="readout" id="speed-readout">1.00&times;</span>
+    <button id="speed-up" title="speed up">+</button>
+  </div>
+  <div class="group">
+    <button id="label-toggle" title="toggle structure titles">labels: on</button>
+  </div>
 </div>
 <div id="info-panel">
   <span class="close" id="info-close">✕</span>
@@ -222,7 +252,7 @@ for (let i = 0; i < DEVICE_COUNT; i++) {
   makeSelectable(dot, {
     name: `Relay Satellite ${i + 1}`,
     kind: "Device",
-    deviceType: "relay",
+    deviceType: "earth-relay",
     status: "active",
     function: "Orbits Earth as part of a laser-linked relay mesh. Passes data/position along the ring network to its two neighboring devices.",
   }, 0.5);
@@ -391,7 +421,7 @@ transmitter.position.copy(FOUNDRY_POS).add(new THREE.Vector3(0.6, 0, 0));
 scene.add(transmitter);
 makeSelectable(transmitter, {
   name: "Power Transmitter",
-  kind: "Structure",
+  kind: "Device",
   deviceType: "microwave-transmitter",
   status: "active",
   function: "Phased-array microwave transmitter co-located with the foundry. Converts concentrated solar energy into a tightly-beamed, low-intensity microwave signal — sent hop-to-hop through the relay mesh rather than as one high-power beam straight at Earth.",
@@ -505,9 +535,15 @@ function makeTextSprite(text, color = "#ffffff") {
   const texture = new THREE.CanvasTexture(canvas);
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
   const aspect = canvas.width / canvas.height;
+  sprite.userData.aspect = aspect; // reused each frame to rescale by camera distance, see majorLabels below
   sprite.scale.set(aspect * 1.4, 1.4, 1);
   return sprite;
 }
+
+// major-structure titles (Infinite Compute, Survey Ship, ...): registered here so a
+// single toggle button and a single per-frame distance-scale pass covers all of them,
+// rather than each label needing its own wiring
+const majorLabels = [];
 
 // ---------- infinite compute: a black hole directly opposite the foundry ----------
 // Sits on the "behind" half of the galactic travel line, the same distance from
@@ -523,8 +559,9 @@ const blackHole = new THREE.Mesh(
 );
 blackHole.position.copy(BLACKHOLE_POS);
 scene.add(blackHole);
+const INFINITE_COMPUTE_NAME = "Infinite Compute";
 makeSelectable(blackHole, {
-  name: "Infinite Compute",
+  name: INFINITE_COMPUTE_NAME,
   kind: "Structure",
   deviceType: "compute-cluster",
   status: "active",
@@ -538,9 +575,10 @@ const accretionDisk = new THREE.Mesh(
 accretionDisk.rotation.x = 1.05;
 blackHole.add(accretionDisk);
 
-const infiniteComputeLabel = makeTextSprite("INFINITE COMPUTE", "#ffcf9e");
+const infiniteComputeLabel = makeTextSprite(INFINITE_COMPUTE_NAME.toUpperCase(), "#ffcf9e");
 infiniteComputeLabel.position.copy(BLACKHOLE_POS).add(new THREE.Vector3(0, 1.6, 0));
 scene.add(infiniteComputeLabel);
+majorLabels.push(infiniteComputeLabel);
 
 // laser transmitter, just outside the sun on the black hole's side
 const LASER_TRANSMITTER_POS = GALACTIC_TRAVEL_DIR.clone().multiplyScalar(-4.6);
@@ -553,7 +591,7 @@ laserTransmitter.lookAt(BLACKHOLE_POS);
 scene.add(laserTransmitter);
 makeSelectable(laserTransmitter, {
   name: "Laser Transmitter",
-  kind: "Structure",
+  kind: "Device",
   deviceType: "laser-transmitter",
   status: "active",
   function: "High-power laser transmitter drawing on nearby solar energy. Feeds two relay chains: one to Infinite Compute behind the sun, and one — bypassing the sun's far side — forward to the Survey Ship's patrol track in front of the sun.",
@@ -620,16 +658,18 @@ const ship = new THREE.Mesh(
 );
 ship.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), GALACTIC_TRAVEL_DIR); // hull aligned with its direction of travel
 scene.add(ship);
+const SURVEY_SHIP_NAME = "Survey Ship";
 makeSelectable(ship, {
-  name: "Survey Ship",
+  name: SURVEY_SHIP_NAME,
   kind: "Device",
   deviceType: "survey-ship",
   status: "active",
   function: "Patrols a track parallel to the sun's galactic travel line, ahead of the heliosphere, collecting observational data. Powered by the same Laser Transmitter that feeds Infinite Compute, via a long bypass relay chain routed wide of the sun.",
 }, 0.7);
 
-const shipLabel = makeTextSprite("SURVEY SHIP", "#bff3ff");
+const shipLabel = makeTextSprite(SURVEY_SHIP_NAME.toUpperCase(), "#bff3ff");
 scene.add(shipLabel); // position tracks the ship every frame, since (unlike the black hole) it moves
+majorLabels.push(shipLabel);
 
 // two fixed relay hops bending the beam around the sun (well outside its radius 4)
 // from the transmitter (behind, on-axis) out to the ship's patrol lane (in front, offset)
@@ -766,8 +806,44 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   }
 });
 
+// ---------- simulation speed control ----------
+// The sim can be sped up or slowed down but never paused — MIN_SPEED is a floor
+// above zero, not a stop. dt is scaled by simSpeed once, at the source, in animate().
+const MIN_SPEED = 0.1;
+const MAX_SPEED = 20;
+const SPEED_STEP = 1.5;
+let simSpeed = 1;
+const speedReadout = document.getElementById("speed-readout");
+const speedUpBtn = document.getElementById("speed-up");
+const speedDownBtn = document.getElementById("speed-down");
+
+function setSpeed(mult) {
+  simSpeed = THREE.MathUtils.clamp(mult, MIN_SPEED, MAX_SPEED);
+  speedReadout.textContent = simSpeed.toFixed(2) + "×";
+  speedUpBtn.disabled = simSpeed >= MAX_SPEED;
+  speedDownBtn.disabled = simSpeed <= MIN_SPEED;
+}
+speedUpBtn.addEventListener("click", () => setSpeed(simSpeed * SPEED_STEP));
+speedDownBtn.addEventListener("click", () => setSpeed(simSpeed / SPEED_STEP));
+setSpeed(1);
+
+// ---------- label mode: show/hide major-structure titles ----------
+let labelsVisible = true;
+const labelToggleBtn = document.getElementById("label-toggle");
+labelToggleBtn.addEventListener("click", () => {
+  labelsVisible = !labelsVisible;
+  labelToggleBtn.textContent = `labels: ${labelsVisible ? "on" : "off"}`;
+  for (const label of majorLabels) label.visible = labelsVisible;
+});
+
+// distance-based scale range for major labels — see the per-frame update in animate()
+const LABEL_SCALE_FACTOR = 0.022;
+const LABEL_MIN_SCALE = 0.7;
+const LABEL_MAX_SCALE = 6;
+
 // ---------- animation loop ----------
 const clock = new THREE.Clock();
+let simTime = 0; // accumulated sim time (scaled by simSpeed) — distinct from wall-clock time
 const tmpA = new THREE.Vector3();
 const tmpB = new THREE.Vector3();
 const tmpLensPos = new THREE.Vector3();
@@ -779,8 +855,9 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 function animate() {
   requestAnimationFrame(animate);
-  const dt = clock.getDelta();
-  const t = clock.elapsedTime;
+  const dt = clock.getDelta() * simSpeed;
+  simTime += dt;
+  const t = simTime;
 
   // planets revolve around the sun on true Kepler ellipses (sun at a focus, not the
   // center) — p.angle is the mean anomaly, which increases at a constant rate; actual
@@ -873,6 +950,15 @@ function animate() {
     arr[0] = b.x; arr[1] = b.y; arr[2] = b.z;
     arr[3] = ship.position.x; arr[4] = ship.position.y; arr[5] = ship.position.z;
     shipBeam.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // major-structure labels scale with camera distance so they stay readable zoomed
+  // out and don't dominate the screen zoomed in; visibility is set once on toggle,
+  // not per frame, in the label-mode button handler above
+  for (const label of majorLabels) {
+    const dist = camera.position.distanceTo(label.position);
+    const s = THREE.MathUtils.clamp(dist * LABEL_SCALE_FACTOR, LABEL_MIN_SCALE, LABEL_MAX_SCALE);
+    label.scale.set(label.userData.aspect * s, s, 1);
   }
 
   // keep the selection highlight ring pinned to its (possibly moving) target
