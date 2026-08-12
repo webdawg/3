@@ -56,7 +56,7 @@
   orange block near Earth = Shipyard, linked into Earth's relay + power network &nbsp;|&nbsp; small orange ships = automated Mining Ships, cycling out to a random planet, harvesting, and back<br/>
   dashed line through the sun = its direction of travel relative to the galaxy (foundry sits on the forward half)<br/>
   black sphere behind the sun = Infinite Compute, directly opposite the foundry &nbsp;|&nbsp; red dots/lines = laser relay chain powering it (safe here — far side of the sun from Earth)<br/>
-  faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line &nbsp;|&nbsp; blue dots/lines = the ship's dedicated relay chain — same shared Laser Transmitter as Infinite Compute, but a separate branch, colored to distinguish it<br/>
+  faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line &nbsp;|&nbsp; blue dots/lines = the ship's own dedicated Ship Transmitter and relay chain, fully independent from Infinite Compute's red one<br/>
   mint dishes between Mercury and Venus = Solar Observatories, orbiting the sun and sweeping between deep space and the sun itself, searching for a galactic data transmission<br/>
   pale concave dish on the far side of the sun from Earth = 1000-unit JWST telescope swarm at the Sun-Earth L3 point, every unit facing outward together, fed by its own dedicated relay chain behind the dish<br/>
   toolbar below: speed &minus;/+ scales simulation rate (it never pauses) &nbsp;|&nbsp; labels button toggles the on-screen structure titles
@@ -790,7 +790,7 @@ makeSelectable(laserTransmitter, {
   kind: "Device",
   deviceType: "laser-transmitter",
   status: "active",
-  function: "High-power laser transmitter drawing on nearby solar energy. Feeds two relay chains: one to Infinite Compute behind the sun, and one — bypassing the sun's far side — forward to the Survey Ship's patrol track in front of the sun.",
+  function: "High-power laser transmitter drawing on nearby solar energy, dedicated to Infinite Compute's relay chain — an independent power system from the one that feeds the Survey Ship (see the Ship Transmitter, on the sun's forward side).",
 }, 0.6);
 
 // fixed laser relay chain between the transmitter and the black hole (all static —
@@ -842,9 +842,9 @@ const HELIOSPHERE_RADIUS = 50;
 }
 
 // ---------- survey ship: patrols ahead of the heliosphere, parallel to the galactic line ----------
-// V is perpendicular to the galactic travel line — used both as the ship's patrol
-// offset and to route a bypass relay branch (from the same Laser Transmitter) wide
-// of the sun, since the transmitter sits behind the sun and the ship patrols in front.
+// V is perpendicular to the galactic travel line — used as the ship's patrol offset,
+// and as the lateral drift for its dedicated relay chain's outer end (see the Ship
+// Transmitter section below).
 const V = new THREE.Vector3(0, 1, 0).cross(GALACTIC_TRAVEL_DIR).normalize();
 const SHIP_LATERAL_OFFSET = 2.5;
 const SHIP_TRAVEL_MIN = HELIOSPHERE_RADIUS + 2;
@@ -862,52 +862,40 @@ makeSelectable(ship, {
   kind: "Device",
   deviceType: "survey-ship",
   status: "active",
-  function: "Patrols a track parallel to the sun's galactic travel line, ahead of the heliosphere, collecting observational data. Powered by the same Laser Transmitter that feeds Infinite Compute, via a long-haul relay chain that bypasses the sun, then threads outward past the heliosphere in a series of high-power amplifying hops.",
+  function: "Patrols a track parallel to the sun's galactic travel line, ahead of the heliosphere, collecting observational data. Powered by its own dedicated Ship Transmitter — an independent solar power system, not shared with Infinite Compute — via a long-haul relay chain of high-power amplifying hops.",
 }, 0.7);
 
 const shipLabel = makeTextSprite(SURVEY_SHIP_NAME.toUpperCase(), "#bff3ff");
 scene.add(shipLabel); // position tracks the ship every frame, since (unlike the black hole) it moves
 majorLabels.push(shipLabel);
 
-// the transmitter feeds two independent chains from the same shared origin (Infinite
-// Compute's, straight back; the ship's, bent around the sun) — they diverge sharply
-// right at the transmitter (about 117°), but at the app's default camera angle that
-// branch point is only a few pixels wide, so the two can read as one continuous line.
-// Giving the ship's chain its own color (echoing the ship's own cyan hull) makes the
-// two branches distinguishable without needing to change the camera angle.
-const SHIP_CHAIN_COLOR = 0x4fc3ff;
+// The ship used to share the Infinite Compute Laser Transmitter (behind the sun),
+// reaching the ship (in front) via two relay hops bent around the sun. That made the
+// ship's power dependent on infrastructure that exists to serve something else
+// entirely. Replaced with a fully independent system: its own transmitter, on the
+// same (forward) side of the sun the ship already patrols on, drawing solar energy
+// directly rather than routing through Infinite Compute's supply. Since source and
+// destination are now on the same side, no bypass-around-the-sun routing is needed at
+// all — every hop lies along roughly the same ray from the sun, well clear of both the
+// sun's surface and the ecliptic plane (same safety reasoning Goal 5 already
+// established for this general direction).
+const SHIP_CHAIN_COLOR = 0x4fc3ff; // echoes the ship's own cyan hull, distinguishing this system from Infinite Compute's red one
 
-// two fixed relay hops bending the beam around the sun (well outside its radius 4)
-// from the transmitter (behind, on-axis) out to the start of the long-haul chain
-// (in front, offset) that carries it the rest of the way to the ship's patrol lane
-const bypassWaypoints = [
-  GALACTIC_TRAVEL_DIR.clone().multiplyScalar(-2).addScaledVector(V, 5),
-  GALACTIC_TRAVEL_DIR.clone().multiplyScalar(4).addScaledVector(V, 5),
-];
-for (let i = 0; i < bypassWaypoints.length; i++) {
-  const relay = new THREE.Mesh(
-    new THREE.SphereGeometry(0.18, 10, 10),
-    new THREE.MeshBasicMaterial({ color: SHIP_CHAIN_COLOR })
-  );
-  relay.position.copy(bypassWaypoints[i]);
-  scene.add(relay);
-  makeSelectable(relay, {
-    name: `Laser Bypass Relay ${i + 1}`,
-    kind: "Device",
-    deviceType: "laser-relay",
-    status: "active",
-    function: "Fixed laser relay station bending the Laser Transmitter's beam wide around the sun, carrying power forward into the long-haul relay chain toward the Survey Ship's patrol lane.",
-  }, 0.4);
-}
-const bypassLinkInfo = {
-  name: "Laser Bypass Link",
-  kind: "Link",
-  deviceType: "laser-chain",
+const SHIP_TRANSMITTER_POS = GALACTIC_TRAVEL_DIR.clone().multiplyScalar(4.6);
+const shipTransmitter = new THREE.Mesh(
+  new THREE.ConeGeometry(0.3, 0.5, 12),
+  new THREE.MeshStandardMaterial({ color: SHIP_CHAIN_COLOR, metalness: 0.6, roughness: 0.3, emissive: 0x0a3a55, emissiveIntensity: 0.8 })
+);
+shipTransmitter.position.copy(SHIP_TRANSMITTER_POS);
+shipTransmitter.lookAt(SHIP_TRANSMITTER_POS.clone().add(GALACTIC_TRAVEL_DIR));
+scene.add(shipTransmitter);
+makeSelectable(shipTransmitter, {
+  name: "Ship Transmitter",
+  kind: "Device",
+  deviceType: "laser-transmitter",
   status: "active",
-  function: "One hop bending the Laser Transmitter's beam wide around the sun, ahead of the long-haul chain out to the Survey Ship's patrol lane.",
-};
-addStaticLink(LASER_TRANSMITTER_POS, bypassWaypoints[0], SHIP_CHAIN_COLOR, 0.85, bypassLinkInfo);
-addStaticLink(bypassWaypoints[0], bypassWaypoints[1], SHIP_CHAIN_COLOR, 0.85, bypassLinkInfo);
+  function: "High-power laser transmitter drawing directly on nearby solar energy, dedicated solely to the Survey Ship. An independent power system, not connected to the Laser Transmitter that feeds Infinite Compute.",
+}, 0.6);
 
 // long-haul relay chain: the survey ship patrols tens of units past the heliosphere —
 // by far the longest distance any link in this network has to cover. A single bare
@@ -923,7 +911,7 @@ const SHIP_CHAIN_OUTER = GALACTIC_TRAVEL_DIR.clone()
 const shipRelayPositions = [];
 for (let i = 1; i <= SHIP_RELAY_COUNT; i++) {
   const relayT = i / (SHIP_RELAY_COUNT + 1);
-  shipRelayPositions.push(new THREE.Vector3().lerpVectors(bypassWaypoints[1], SHIP_CHAIN_OUTER, relayT));
+  shipRelayPositions.push(new THREE.Vector3().lerpVectors(SHIP_TRANSMITTER_POS, SHIP_CHAIN_OUTER, relayT));
 }
 for (let i = 0; i < SHIP_RELAY_COUNT; i++) {
   const relay = new THREE.Mesh(
@@ -937,17 +925,17 @@ for (let i = 0; i < SHIP_RELAY_COUNT; i++) {
     kind: "Device",
     deviceType: "laser-relay",
     status: "active",
-    function: `High-power laser relay station, hop ${i + 1} of ${SHIP_RELAY_COUNT} in the long-haul chain carrying the Laser Transmitter's beam out to the Survey Ship's patrol lane beyond the heliosphere. Re-amplifies and re-aims the beam onward so it stays tightly focused over the distance instead of spreading out across one long, unbroken leg.`,
+    function: `High-power laser relay station, hop ${i + 1} of ${SHIP_RELAY_COUNT} in the long-haul chain carrying the Ship Transmitter's beam out to the Survey Ship's patrol lane beyond the heliosphere. Re-amplifies and re-aims the beam onward so it stays tightly focused over the distance instead of spreading out across one long, unbroken leg.`,
   }, 0.42);
 }
-const shipChainPoints = [bypassWaypoints[1], ...shipRelayPositions];
+const shipChainPoints = [SHIP_TRANSMITTER_POS, ...shipRelayPositions];
 for (let i = 0; i < shipChainPoints.length - 1; i++) {
   addStaticLink(shipChainPoints[i], shipChainPoints[i + 1], SHIP_CHAIN_COLOR, 0.85, {
     name: `Ship Relay Chain Link ${i + 1}`,
     kind: "Link",
     deviceType: "laser-chain",
     status: "active",
-    function: "One hop in the long-haul relay chain carrying the Laser Transmitter's beam out to the Survey Ship's patrol lane beyond the heliosphere.",
+    function: "One hop in the long-haul relay chain carrying the Ship Transmitter's beam out to the Survey Ship's patrol lane beyond the heliosphere.",
   });
 }
 
