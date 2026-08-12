@@ -158,6 +158,16 @@ Applies the same on-screen title treatment from Goal 5 (Infinite Compute) to the
 - **System-wide power network**: the microwave relay mesh — previously scattered only between the Solar Foundry and Earth's orbit — now extends out to Neptune's orbit, and every planet (not just Earth) has its own rectenna whose downlink continuously re-aims to whichever relay node is currently nearest. This is a direct generalization of the mechanism Goal 4 built for Earth alone, now applied to all eight planets, satisfying "expand all energy networks to touch every planet."
 - **Scope of "energy networks"**: this goal expands specifically the power-*delivery* network (foundry → transmitter → relay mesh → rectenna) to every planet. It deliberately leaves the sun-centric collection side (mirrors/lenses/foundry) and the point-to-point laser chains (Infinite Compute, Survey Ship) as they were — neither is "a network reaching every planet" by nature, so expanding them wasn't in scope here.
 
+### Power Relay Mesh Connectivity Correction (verbatim)
+
+> there is a alternitive energy network that is currently looks like purple dots - what is it
+
+> it is not connected by anything right now - what energy is it connected with and how can we represent that
+
+**Implications for the spec:** widening the relay mesh out to Neptune's orbit in Goal 9 exposed a real bug in Goal 4's original mesh-generation approach. Each relay node linked only to its 2 nearest neighbors — a plain nearest-neighbor graph, which does not guarantee a single connected component. Checked directly (simulating the same generation logic): across sample layouts at the widened, 36-node/Neptune-spanning scale, only 3–25 of 36 relay nodes typically had any path back to the transmitter at all — the rest formed pockets of purple dots wired only to each other, with no real connection to the Power Transmitter or, transitively, the Solar Foundry (this network's actual energy source). Visually this read exactly as reported: purple dots that "aren't connected to anything."
+
+Fixed by rebuilding the mesh as a **minimum spanning tree rooted at the transmitter's entry node** (Prim's algorithm over the relay nodes), which guarantees by construction that every relay node — and therefore every planet's rectenna downstream of it — has exactly one traceable path back to the transmitter. A handful of redundant nearest-neighbor links are layered on top of that guaranteed backbone purely for Goal 4's original "different lines"/reroutable-mesh look; they're additive only, so they can never reintroduce a disconnected pocket. The backbone renders at higher opacity than the redundant links, so the actual guaranteed power path reads as visually distinct from the decorative extra links.
+
 Phase 1 is deliberately narrow. It covers only:
 
 1. **Gravity** — N-body gravitational attraction between the sun, planets, and devices (or a simplified two-body/patched-conic model per orbiting object, see Open Questions).
