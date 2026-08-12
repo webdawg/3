@@ -58,7 +58,7 @@
   black sphere behind the sun = Infinite Compute, directly opposite the foundry &nbsp;|&nbsp; red dots/lines = laser relay chain powering it (safe here — far side of the sun from Earth)<br/>
   faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line, powered by the same Laser Transmitter via a multi-hop long-haul relay chain (not one bare beam)<br/>
   mint dishes between Mercury and Venus = Solar Observatories, orbiting the sun and sweeping between deep space and the sun itself, searching for a galactic data transmission<br/>
-  pale cluster on the far side of the sun from Earth = 1000-unit JWST telescope swarm at the Sun-Earth L3 point, powered via the relay mesh (not a direct sun-crossing line to Earth)<br/>
+  pale concave dish on the far side of the sun from Earth = 1000-unit JWST telescope swarm at the Sun-Earth L3 point, every unit facing outward together, powered via the relay mesh<br/>
   toolbar below: speed &minus;/+ scales simulation rate (it never pauses) &nbsp;|&nbsp; labels button toggles the on-screen structure titles
 </div>
 <div id="toolbar">
@@ -1008,7 +1008,9 @@ for (let i = 0; i < OBS_COUNT; i++) {
 // its scattered, non-planar node placement naturally avoids a straight line through the
 // sun's center, the same way it already does for every other consumer on the mesh.
 const JWST_COUNT = 1000;
-const JWST_SWARM_RADIUS = 1.5; // loose halo cluster around the relay station, echoing JWST's real halo orbit
+const JWST_SWARM_RADIUS = 1.5; // radius of the dish's spherical-cap surface
+const JWST_CAP_ANGLE = THREE.MathUtils.degToRad(50); // how wide the concave dish opens
+const JWST_LOCAL_AXIS = new THREE.Vector3(0, 0, 1); // the axis every unit's local geometry "points" along
 
 const l3Relay = new THREE.Mesh(
   new THREE.OctahedronGeometry(0.22, 0),
@@ -1020,7 +1022,7 @@ makeSelectable(l3Relay, {
   kind: "Device",
   deviceType: "power-relay",
   status: "active",
-  function: "Fixed power relay parked at the Sun-Earth L3 point, on the far side of the sun from Earth. Draws power from the nearest node in the power relay mesh (a direct line to Earth would pass through the sun) and distributes it locally to the 1000-unit JWST telescope swarm halo-orbiting around it.",
+  function: "Fixed power relay parked at the Sun-Earth L3 point, on the far side of the sun from Earth. Draws power from the nearest node in the power relay mesh (a direct line to Earth would pass through the sun) and distributes it locally to the 1000-unit JWST telescope swarm arrayed around it as a concave, uniformly-oriented dish.",
 }, 0.6);
 
 const l3PowerLink = new THREE.Line(
@@ -1047,20 +1049,27 @@ jwstSwarm.userData.isJwstSwarm = true;
 scene.add(jwstSwarm);
 selectables.push(jwstSwarm);
 
-// each instance's fixed local offset from the L3 relay station — set once; moving the
-// whole swarm each frame is then just one position update (see animate() below),
-// not 1000 individual matrix recomputations
+// each instance's fixed local offset from the L3 relay station, on the surface of a
+// spherical cap — a concave dish, not a filled cluster — opening toward local +Z. Every
+// unit shares this same local geometry orientation (no per-instance rotation baked in),
+// so the whole array points in one direction simply because the dish's opening axis is
+// one direction; that direction, and the dish's rotation in world space, comes entirely
+// from jwstSwarm's own quaternion, updated once per frame in animate() rather than
+// recomputing 1000 individual instance matrices every frame.
 const jwstOffsets = [];
 {
   const m = new THREE.Matrix4();
+  const cosCap = Math.cos(JWST_CAP_ANGLE);
   for (let i = 0; i < JWST_COUNT; i++) {
-    const r = JWST_SWARM_RADIUS * Math.cbrt(Math.random()); // uniform within a sphere, not just on its surface
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
+    // uniform density over the cap's solid angle (not just over theta, which would
+    // bunch points near the pole) — standard spherical-cap sampling
+    const cosTheta = 1 - Math.random() * (1 - cosCap);
+    const sinTheta = Math.sqrt(1 - cosTheta * cosTheta);
+    const phi = Math.random() * Math.PI * 2;
     const offset = new THREE.Vector3(
-      r * Math.sin(phi) * Math.cos(theta),
-      r * Math.cos(phi),
-      r * Math.sin(phi) * Math.sin(theta)
+      JWST_SWARM_RADIUS * sinTheta * Math.cos(phi),
+      JWST_SWARM_RADIUS * sinTheta * Math.sin(phi),
+      -JWST_SWARM_RADIUS * cosTheta // deepest at the pole (dish center), curving toward 0 at the rim
     );
     jwstOffsets.push(offset);
     m.makeTranslation(offset.x, offset.y, offset.z);
@@ -1078,7 +1087,7 @@ function jwstInfo(instanceId) {
     kind: "Device",
     deviceType: "space-telescope",
     status: "active",
-    function: "One unit in a 1000-telescope swarm halo-orbiting the Sun-Earth L3 point, on the far side of the sun from Earth (moved here from L2, where the real James Webb Space Telescope actually sits). Independently tracked like every device here, but the swarm functions as one combined instrument, per Goal 1's original vision of many static telescopes acting as one. Powered by the L3 Relay Station.",
+    function: "One unit in a 1000-telescope swarm at the Sun-Earth L3 point, on the far side of the sun from Earth (moved here from L2, where the real James Webb Space Telescope actually sits). Arranged with the rest of the swarm on a concave, dish-shaped surface, every unit facing the same direction — outward from the sun, into deep space. Independently tracked like every device here, but the swarm functions as one combined instrument, per Goal 1's original vision of many static telescopes acting as one. Powered by the L3 Relay Station.",
   };
 }
 
@@ -1165,7 +1174,9 @@ function selectJwstInstance(instanceId) {
     new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.6 })
   );
   scene.add(highlightRing);
-  highlightRing.position.copy(jwstSwarm.position).add(jwstOffsets[instanceId]);
+  // jwstSwarm now rotates as a group (see animate()), so an instance's world position
+  // is its local offset rotated by the swarm's current orientation, then translated
+  highlightRing.position.copy(jwstOffsets[instanceId]).applyQuaternion(jwstSwarm.quaternion).add(jwstSwarm.position);
 
   renderInfoPanel(jwstInfo(instanceId));
 }
@@ -1315,11 +1326,15 @@ function animate() {
 
   // L3 sits on the far side of the sun from Earth — the exact mirror of Earth's
   // current position through the origin — and co-rotates with Earth's orbit. The whole
-  // JWST swarm moves as one group (see jwstOffsets above), so this is a single position
-  // update rather than 1000 individual ones.
+  // JWST swarm moves and rotates as one rigid group (see jwstOffsets above), so this is
+  // a single position + orientation update rather than 1000 individual ones. Every
+  // unit points the same direction because the whole dish's local +Z axis is aimed
+  // outward, away from the sun, into deep space.
   tmpA.copy(earth.mesh.position).negate();
   l3Relay.position.copy(tmpA);
   jwstSwarm.position.copy(tmpA);
+  tmpB.copy(tmpA).normalize();
+  jwstSwarm.quaternion.setFromUnitVectors(JWST_LOCAL_AXIS, tmpB);
   {
     // re-aims to the nearest power-relay-mesh node each frame, same mechanism as every
     // planet's rectenna — not a direct line to Earth, which would cross the sun
@@ -1421,7 +1436,7 @@ function animate() {
   // instances track the swarm's group position plus their own fixed offset
   if (highlightRing) {
     if (selectedJwstIndex !== null) {
-      highlightRing.position.copy(jwstSwarm.position).add(jwstOffsets[selectedJwstIndex]);
+      highlightRing.position.copy(jwstOffsets[selectedJwstIndex]).applyQuaternion(jwstSwarm.quaternion).add(jwstSwarm.position);
     } else if (selected && !selected.isLine) {
       selected.getWorldPosition(highlightRing.position);
     }
