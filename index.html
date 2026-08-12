@@ -52,7 +52,8 @@
 <div id="hud">
   drag: orbit &nbsp;|&nbsp; scroll: zoom &nbsp;|&nbsp; right-drag: pan &nbsp;|&nbsp; arrow keys: pan &nbsp;|&nbsp; click: select<br/>
   sun + planets on true Kepler ellipses (real eccentricities, sun at a focus) &nbsp;|&nbsp; green dots = Earth relay devices &nbsp;|&nbsp; silver dots = mirrors, linked in a photon ring &nbsp;|&nbsp; white glow = static foundry, amplified by an in-line diamond lens per mirror<br/>
-  purple dots = microwave power relay mesh, transmitter (sun end) &rarr; rectenna (Earth end) &nbsp;|&nbsp; no lasers to Earth — power hops safely through the mesh instead<br/>
+  purple dots = microwave power relay mesh, transmitter (sun end) &rarr; every planet's rectenna &nbsp;|&nbsp; no lasers to Earth — power hops safely through the mesh instead<br/>
+  orange block near Earth = Shipyard, linked into Earth's relay + power network &nbsp;|&nbsp; small orange ships = automated Mining Ships, cycling out to a random planet, harvesting, and back<br/>
   dashed line through the sun = its direction of travel relative to the galaxy (foundry sits on the forward half)<br/>
   black sphere behind the sun = Infinite Compute, directly opposite the foundry &nbsp;|&nbsp; red dots/lines = laser relay chain powering it (safe here — far side of the sun from Earth)<br/>
   faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line, powered by the same Laser Transmitter via a long bypass relay<br/>
@@ -431,26 +432,53 @@ const rectenna = new THREE.Mesh(
   new THREE.BoxGeometry(0.55, 0.06, 0.55),
   new THREE.MeshStandardMaterial({ color: 0x66e0c4, metalness: 0.4, roughness: 0.4, emissive: 0x0c3a30, emissiveIntensity: 0.6 })
 );
-rectenna.position.set(-2.4, 0, 0); // fixed slot in Earth's local frame, doesn't need to orbit independently
-earthAnchor.add(rectenna);
+scene.add(rectenna);
 makeSelectable(rectenna, {
-  name: "Rectenna",
+  name: "Earth Rectenna",
   kind: "Device",
   deviceType: "rectenna",
   status: "active",
   function: "Rectifying antenna array in Earth orbit. Converts the incoming microwave beam back into usable power. The relay mesh's final hop continuously re-aims to track it as Earth orbits the sun.",
 }, 0.55);
 
-// scattered fixed relay stations "everywhere" between the transmitter and Earth's orbit —
-// first and last are anchored near each end, the rest are strewn through the space between
-const RELAY_COUNT = 12;
+// every other planet gets a matching rectenna so the microwave power network reaches
+// the whole solar system, not just Earth (Goal 9) — each sits at a fixed local offset
+// from its planet and is repositioned in world space every frame in animate(), the
+// same effective placement Earth's rectenna used to get via earthAnchor parenting
+const planetRectennas = [{ mesh: rectenna, planet: earth, offset: new THREE.Vector3(-2.4, 0, 0) }];
+for (const p of planets) {
+  if (p === earth) continue;
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.06, 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x66e0c4, metalness: 0.4, roughness: 0.4, emissive: 0x0c3a30, emissiveIntensity: 0.5 })
+  );
+  scene.add(mesh);
+  makeSelectable(mesh, {
+    name: `${p.name} Rectenna`,
+    kind: "Device",
+    deviceType: "rectenna",
+    status: "active",
+    function: `Rectifying antenna array in ${p.name} orbit, part of the solar-system-wide microwave power mesh delivered from the Solar Foundry. Its downlink continuously re-aims to whichever relay node is currently nearest.`,
+  }, 0.5);
+  // offset direction seeded off each planet's own distance so rectennas don't all
+  // render on the same side of every planet, scaled by size for clearance
+  const offset = new THREE.Vector3(Math.cos(p.dist) * (p.size + 1.2), 0.3, Math.sin(p.dist) * (p.size + 1.2));
+  planetRectennas.push({ mesh, planet: p, offset });
+}
+
+// scattered fixed relay stations "everywhere" from the foundry out past Neptune's
+// orbit — first and last are anchored near each end, the rest are strewn through the
+// space between, so every planet's rectenna has nodes within reach (Goal 9 widens
+// this from its original Earth-only range)
+const MESH_OUTER_DIST = planets[planets.length - 1].dist; // Neptune
+const RELAY_COUNT = 36;
 const relayNodes = [];
 for (let i = 0; i < RELAY_COUNT; i++) {
   const tRadial =
-    i === 0 ? 0.08 :
-    i === RELAY_COUNT - 1 ? 0.92 :
-    0.15 + Math.random() * 0.7;
-  const radius = THREE.MathUtils.lerp(FOUNDRY_DIST, earth.dist, tRadial);
+    i === 0 ? 0.06 :
+    i === RELAY_COUNT - 1 ? 0.96 :
+    0.1 + Math.random() * 0.85;
+  const radius = THREE.MathUtils.lerp(FOUNDRY_DIST, MESH_OUTER_DIST, tRadial);
   const angle = Math.random() * Math.PI * 2;
   const y = FOUNDRY_POS.y * (1 - tRadial) * (0.4 + Math.random() * 0.6);
   const pos = new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
@@ -466,7 +494,7 @@ for (let i = 0; i < RELAY_COUNT; i++) {
     kind: "Device",
     deviceType: "power-relay",
     status: "active",
-    function: "Fixed microwave relay station, one node in a distributed mesh moving energy from the Power Transmitter near the sun to Earth's Rectenna. Receives a beam from a neighboring hop and retransmits it onward — keeping every leg short so no single beam is ever concentrated or dangerous.",
+    function: "Fixed microwave relay station, one node in a distributed mesh moving energy from the Power Transmitter near the sun outward to every planet's rectenna. Receives a beam from a neighboring hop and retransmits it onward — keeping every leg short so no single beam is ever concentrated or dangerous.",
   }, 0.45);
 
   relayNodes.push({ mesh: node, pos });
@@ -509,12 +537,76 @@ addStaticLink(
   0.7
 );
 
-// downlink to the rectenna is dynamic: as Earth orbits, it re-aims to whichever
-// relay node is currently nearest
-const downlinkGeo = new THREE.BufferGeometry();
-downlinkGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
-const downlinkLine = new THREE.Line(downlinkGeo, new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.8 }));
-scene.add(downlinkLine);
+// each planet's downlink is dynamic: as it orbits, it re-aims to whichever relay node
+// is currently nearest (generalizes what used to be an Earth-only line)
+for (const pr of planetRectennas) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
+  pr.line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.8 }));
+  scene.add(pr.line);
+}
+
+// ---------- earth shipyard & automated mining fleet ----------
+// A fixed structure near Earth that continuously builds and launches autonomous
+// mining ships (Goal 9). Ships roam the whole solar system harvesting elements from
+// whichever body they're currently sent to, then return to the shipyard before
+// departing again — fully automated, no scripted route. The shipyard itself is wired
+// directly into Earth's existing network rather than standing alone.
+const SHIPYARD_OFFSET = new THREE.Vector3(2.6, 0.4, -1.6);
+const shipyard = new THREE.Mesh(
+  new THREE.BoxGeometry(0.9, 0.3, 0.55),
+  new THREE.MeshStandardMaterial({ color: 0xd98a4a, metalness: 0.5, roughness: 0.4, emissive: 0x3a2210, emissiveIntensity: 0.5 })
+);
+scene.add(shipyard);
+makeSelectable(shipyard, {
+  name: "Earth Shipyard",
+  kind: "Structure",
+  deviceType: "shipyard",
+  status: "active",
+  function: "Automated shipbuilding facility in Earth orbit. Continuously constructs and launches autonomous mining ships that harvest raw elements from bodies across the solar system, and receives them back on return. Linked directly into Earth's power and relay network rather than operating independently.",
+}, 0.7);
+
+// links into Earth's existing network, recomputed each frame since the shipyard
+// moves with Earth: one into the data relay ring, one into the power system
+const shipyardDataLink = new THREE.Line(
+  new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3)),
+  new THREE.LineBasicMaterial({ color: 0xff5566, transparent: true, opacity: 0.6 })
+);
+scene.add(shipyardDataLink);
+const shipyardPowerLink = new THREE.Line(
+  new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3)),
+  new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.6 })
+);
+scene.add(shipyardPowerLink);
+
+const MINING_SHIP_COUNT = 5;
+const MINING_SHIP_SPEED = 5;
+const MINING_ARRIVAL_EPS = 0.6;
+const miningShips = [];
+function pickMiningTarget() {
+  return planets[Math.floor(Math.random() * planets.length)];
+}
+for (let i = 0; i < MINING_SHIP_COUNT; i++) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.34, 0.12, 0.16),
+    new THREE.MeshStandardMaterial({ color: 0xc9793a, metalness: 0.6, roughness: 0.35, emissive: 0x3a1d0a, emissiveIntensity: 0.5 })
+  );
+  scene.add(mesh);
+  makeSelectable(mesh, {
+    name: `Mining Ship ${i + 1}`,
+    kind: "Device",
+    deviceType: "mining-ship",
+    status: "active",
+    function: "Autonomous mining vessel launched from the Earth Shipyard. Travels to a body somewhere in the solar system, harvests raw elements there, then returns to the shipyard before departing again for a new target — fully automated, no fixed route.",
+  }, 0.4);
+  miningShips.push({
+    mesh,
+    state: "outbound", // "outbound" (to target) | "mining" | "inbound" (to shipyard) | "docked"
+    target: pickMiningTarget(),
+    timer: 0,
+    speed: MINING_SHIP_SPEED * (0.85 + Math.random() * 0.3),
+  });
+}
 
 // ---------- text label helper (canvas sprite, always faces the camera) ----------
 function makeTextSprite(text, color = "#ffffff") {
@@ -889,19 +981,61 @@ function animate() {
     o.mesh.lookAt(tmpA.copy(pos).add(tmpObsLookDir));
   }
 
-  // rectenna downlink re-aims to whichever relay node is currently nearest, as Earth moves
-  rectenna.getWorldPosition(tmpRectenna);
-  let nearestRelay = relayNodes[0];
-  let nearestRelayDist = Infinity;
-  for (const node of relayNodes) {
-    const d = tmpRectenna.distanceTo(node.pos);
-    if (d < nearestRelayDist) { nearestRelayDist = d; nearestRelay = node; }
-  }
-  {
-    const arr = downlinkLine.geometry.attributes.position.array;
+  // every planet's rectenna follows its planet and re-aims its downlink to whichever
+  // relay node is currently nearest (generalizes what used to be Earth-only)
+  for (const pr of planetRectennas) {
+    tmpRectenna.copy(pr.planet.mesh.position).add(pr.offset);
+    pr.mesh.position.copy(tmpRectenna);
+
+    let nearestRelay = relayNodes[0];
+    let nearestRelayDist = Infinity;
+    for (const node of relayNodes) {
+      const d = tmpRectenna.distanceTo(node.pos);
+      if (d < nearestRelayDist) { nearestRelayDist = d; nearestRelay = node; }
+    }
+    const arr = pr.line.geometry.attributes.position.array;
     arr[0] = tmpRectenna.x; arr[1] = tmpRectenna.y; arr[2] = tmpRectenna.z;
     arr[3] = nearestRelay.pos.x; arr[4] = nearestRelay.pos.y; arr[5] = nearestRelay.pos.z;
-    downlinkLine.geometry.attributes.position.needsUpdate = true;
+    pr.line.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // shipyard follows Earth; its links into Earth's network are recomputed each frame
+  shipyard.position.copy(earth.mesh.position).add(SHIPYARD_OFFSET);
+  {
+    devices[0].mesh.getWorldPosition(tmpA);
+    let arr = shipyardDataLink.geometry.attributes.position.array;
+    arr[0] = shipyard.position.x; arr[1] = shipyard.position.y; arr[2] = shipyard.position.z;
+    arr[3] = tmpA.x; arr[4] = tmpA.y; arr[5] = tmpA.z;
+    shipyardDataLink.geometry.attributes.position.needsUpdate = true;
+
+    arr = shipyardPowerLink.geometry.attributes.position.array;
+    arr[0] = shipyard.position.x; arr[1] = shipyard.position.y; arr[2] = shipyard.position.z;
+    arr[3] = rectenna.position.x; arr[4] = rectenna.position.y; arr[5] = rectenna.position.z;
+    shipyardPowerLink.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // mining ships: autonomous state machine — outbound to a target body, pause to
+  // "mine", inbound back to the shipyard, pause to "dock", pick a new target, repeat
+  for (const s of miningShips) {
+    if (s.state === "outbound" || s.state === "inbound") {
+      const destination = s.state === "outbound" ? s.target.mesh.position : shipyard.position;
+      tmpB.copy(destination).sub(s.mesh.position);
+      const dist = tmpB.length();
+      if (dist < MINING_ARRIVAL_EPS) {
+        if (s.state === "outbound") { s.state = "mining"; s.timer = 3 + Math.random() * 3; }
+        else { s.state = "docked"; s.timer = 2 + Math.random() * 2; }
+      } else {
+        tmpB.normalize();
+        s.mesh.position.addScaledVector(tmpB, s.speed * dt);
+        s.mesh.lookAt(tmpA.copy(s.mesh.position).add(tmpB));
+      }
+    } else {
+      s.timer -= dt;
+      if (s.timer <= 0) {
+        if (s.state === "mining") { s.state = "inbound"; }
+        else { s.target = pickMiningTarget(); s.state = "outbound"; }
+      }
+    }
   }
 
   // solar collectors orbit the sun directly
