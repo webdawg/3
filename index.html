@@ -56,7 +56,7 @@
   orange block near Earth = Shipyard, linked into Earth's relay + power network &nbsp;|&nbsp; small orange ships = automated Mining Ships, cycling out to a random planet, harvesting, and back<br/>
   dashed line through the sun = its direction of travel relative to the galaxy (foundry sits on the forward half)<br/>
   black sphere behind the sun = Infinite Compute, directly opposite the foundry &nbsp;|&nbsp; red dots/lines = laser relay chain powering it (safe here — far side of the sun from Earth)<br/>
-  faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line, powered by the same Laser Transmitter via a multi-hop long-haul relay chain (not one bare beam)<br/>
+  faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line &nbsp;|&nbsp; blue dots/lines = the ship's dedicated relay chain — same shared Laser Transmitter as Infinite Compute, but a separate branch, colored to distinguish it<br/>
   mint dishes between Mercury and Venus = Solar Observatories, orbiting the sun and sweeping between deep space and the sun itself, searching for a galactic data transmission<br/>
   pale concave dish on the far side of the sun from Earth = 1000-unit JWST telescope swarm at the Sun-Earth L3 point, every unit facing outward together, fed by its own dedicated relay chain behind the dish<br/>
   toolbar below: speed &minus;/+ scales simulation rate (it never pauses) &nbsp;|&nbsp; labels button toggles the on-screen structure titles
@@ -869,6 +869,14 @@ const shipLabel = makeTextSprite(SURVEY_SHIP_NAME.toUpperCase(), "#bff3ff");
 scene.add(shipLabel); // position tracks the ship every frame, since (unlike the black hole) it moves
 majorLabels.push(shipLabel);
 
+// the transmitter feeds two independent chains from the same shared origin (Infinite
+// Compute's, straight back; the ship's, bent around the sun) — they diverge sharply
+// right at the transmitter (about 117°), but at the app's default camera angle that
+// branch point is only a few pixels wide, so the two can read as one continuous line.
+// Giving the ship's chain its own color (echoing the ship's own cyan hull) makes the
+// two branches distinguishable without needing to change the camera angle.
+const SHIP_CHAIN_COLOR = 0x4fc3ff;
+
 // two fixed relay hops bending the beam around the sun (well outside its radius 4)
 // from the transmitter (behind, on-axis) out to the start of the long-haul chain
 // (in front, offset) that carries it the rest of the way to the ship's patrol lane
@@ -879,7 +887,7 @@ const bypassWaypoints = [
 for (let i = 0; i < bypassWaypoints.length; i++) {
   const relay = new THREE.Mesh(
     new THREE.SphereGeometry(0.18, 10, 10),
-    new THREE.MeshBasicMaterial({ color: 0xff3344 })
+    new THREE.MeshBasicMaterial({ color: SHIP_CHAIN_COLOR })
   );
   relay.position.copy(bypassWaypoints[i]);
   scene.add(relay);
@@ -898,8 +906,8 @@ const bypassLinkInfo = {
   status: "active",
   function: "One hop bending the Laser Transmitter's beam wide around the sun, ahead of the long-haul chain out to the Survey Ship's patrol lane.",
 };
-addStaticLink(LASER_TRANSMITTER_POS, bypassWaypoints[0], 0xff3344, 0.85, bypassLinkInfo);
-addStaticLink(bypassWaypoints[0], bypassWaypoints[1], 0xff3344, 0.85, bypassLinkInfo);
+addStaticLink(LASER_TRANSMITTER_POS, bypassWaypoints[0], SHIP_CHAIN_COLOR, 0.85, bypassLinkInfo);
+addStaticLink(bypassWaypoints[0], bypassWaypoints[1], SHIP_CHAIN_COLOR, 0.85, bypassLinkInfo);
 
 // long-haul relay chain: the survey ship patrols tens of units past the heliosphere —
 // by far the longest distance any link in this network has to cover. A single bare
@@ -920,7 +928,7 @@ for (let i = 1; i <= SHIP_RELAY_COUNT; i++) {
 for (let i = 0; i < SHIP_RELAY_COUNT; i++) {
   const relay = new THREE.Mesh(
     new THREE.SphereGeometry(0.2, 10, 10),
-    new THREE.MeshStandardMaterial({ color: 0xff3344, emissive: 0x550a10, emissiveIntensity: 0.8 })
+    new THREE.MeshStandardMaterial({ color: SHIP_CHAIN_COLOR, emissive: 0x0a3a55, emissiveIntensity: 0.8 })
   );
   relay.position.copy(shipRelayPositions[i]);
   scene.add(relay);
@@ -934,7 +942,7 @@ for (let i = 0; i < SHIP_RELAY_COUNT; i++) {
 }
 const shipChainPoints = [bypassWaypoints[1], ...shipRelayPositions];
 for (let i = 0; i < shipChainPoints.length - 1; i++) {
-  addStaticLink(shipChainPoints[i], shipChainPoints[i + 1], 0xff3344, 0.85, {
+  addStaticLink(shipChainPoints[i], shipChainPoints[i + 1], SHIP_CHAIN_COLOR, 0.85, {
     name: `Ship Relay Chain Link ${i + 1}`,
     kind: "Link",
     deviceType: "laser-chain",
@@ -947,7 +955,7 @@ for (let i = 0; i < shipChainPoints.length - 1; i++) {
 // now-short hop needs to continuously re-aim (everything upstream of it is fixed)
 const shipBeamGeo = new THREE.BufferGeometry();
 shipBeamGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
-const shipBeam = new THREE.Line(shipBeamGeo, new THREE.LineBasicMaterial({ color: 0xff3344, transparent: true, opacity: 0.85 }));
+const shipBeam = new THREE.Line(shipBeamGeo, new THREE.LineBasicMaterial({ color: SHIP_CHAIN_COLOR, transparent: true, opacity: 0.85 }));
 scene.add(shipBeam);
 makeLineSelectable(shipBeam, {
   name: "Ship Relay Final Hop",

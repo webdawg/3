@@ -236,6 +236,16 @@ Fixed by adding a forward-exclusion check to the uplink's nearest-node search: a
 
 This is also the concrete instance of the new "field of view stays clear" Design Principle above, and where its scope boundary was actually drawn: only the link(s) that specifically serve the L3 swarm's power path were changed. The shared mesh's own internal backbone/redundant edges (between two *other* nodes, unrelated to L3) were not audited or rerouted — those are short, typically-local hops between nearby nodes, made unlikely (not impossible) to cross the swarm's forward cone, and dynamically rerouting the mesh's whole topology around a continuously-rotating exclusion zone is a materially bigger undertaking than "the power that reaches this swarm must come from behind it." If a mesh edge is ever found crossing the view, that's a follow-up goal, not something this correction silently claims to have solved.
 
+### Two Laser Chains Given Distinct Colors (verbatim)
+
+> why does the line that power the ship go all the way to the blackhole that the sun sits on?
+
+**Implications for the spec:** investigated rather than assumed — this was never actually one line. The Laser Transmitter feeds two structurally independent chains from one shared origin (Goal 5/6's "one transmitter can feed multiple independent relay chains, not just one"): straight back to Infinite Compute, and bent around the sun out to the Survey Ship. Measured directly: the two branches diverge at **117°** right at the transmitter — not remotely a straight line. Both chains shared the same color (`0xff3344`, red) since Goal 5, though, so at the app's default camera angle — which happens to compress the branch point into a few pixels near the sun — they read as one continuous line, prompting the question.
+
+> give the two chains distinct colors
+
+**Implications for the spec:** rather than change the camera angle (which would only fix the default view, not any other angle a user rotates to), gave the ship's entire chain — both bypass relays, all five long-haul relays, every link between them, and the final dynamic hop to the ship itself — a new shared color constant, `SHIP_CHAIN_COLOR = 0x4fc3ff` (cyan-blue), chosen to echo the Survey Ship's own hull color rather than an arbitrary new hue. The Infinite Compute chain and the Laser Transmitter device itself keep the original red — it's still the "trunk" both branches share. This is purely a rendering/legibility fix (the underlying topology didn't change, and was already correct) — a case of the visualization catching up to data that was right all along.
+
 Phase 1 is deliberately narrow. It covers only:
 
 1. **Gravity** — N-body gravitational attraction between the sun, planets, and devices (or a simplified two-body/patched-conic model per orbiting object, see Open Questions).
