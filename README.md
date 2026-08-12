@@ -40,22 +40,27 @@ Safari, Edge.
 - **Scroll** — zoom
 - **Right-drag** — pan
 - **Arrow keys** — pan
-- **Click** an object — select it and show its info panel (name, kind, function)
+- **Click** a body or a network link — select it and show its info panel (name, kind, function)
 
 ## What's implemented
 
 - Sun + all planets on true Keplerian elliptical orbits (real eccentricity,
   period from Kepler's third law)
 - Orbiting devices: solar collectors, mirrors, diamond lenses, observation
-  satellites, relays, transmitters, rectenna, survey ship
+  satellites, relays, transmitters, rectennas, survey ship, mining ships
+- Simulation speed control (never pauses) and a labels on/off toggle
 - Laser links (data) and photon links (light) as lines between devices
 - Concentrated solar foundry (static focal point) fed by a mirror/lens array
-- Microwave relay mesh delivering power from the foundry to an Earth rectenna
+- Microwave relay mesh, guaranteed-connected, delivering power from the
+  foundry to every planet's rectenna
+- Earth Shipyard building autonomous mining ships that roam the system
 - "Infinite Compute" black-hole cluster behind the sun, laser-powered
-- Survey ship patrolling ahead of the heliosphere
-- Click-to-select info panel for every body/device
+- Survey ship patrolling ahead of the heliosphere, powered by a multi-hop
+  long-haul relay chain
+- Click-to-select info panel for every body, device, and energy-network link
 
 Full goal-by-goal history and the data model are in [spec.md](spec.md).
+Raw session prompt history is preserved in [llm-prompt-log/](llm-prompt-log/).
 
 ## Status / next steps
 

@@ -50,13 +50,13 @@
 </head>
 <body>
 <div id="hud">
-  drag: orbit &nbsp;|&nbsp; scroll: zoom &nbsp;|&nbsp; right-drag: pan &nbsp;|&nbsp; arrow keys: pan &nbsp;|&nbsp; click: select<br/>
+  drag: orbit &nbsp;|&nbsp; scroll: zoom &nbsp;|&nbsp; right-drag: pan &nbsp;|&nbsp; arrow keys: pan &nbsp;|&nbsp; click: select (bodies and energy-network links both selectable)<br/>
   sun + planets on true Kepler ellipses (real eccentricities, sun at a focus) &nbsp;|&nbsp; green dots = Earth relay devices &nbsp;|&nbsp; silver dots = mirrors, linked in a photon ring &nbsp;|&nbsp; white glow = static foundry, amplified by an in-line diamond lens per mirror<br/>
   purple dots = microwave power relay mesh, transmitter (sun end) &rarr; every planet's rectenna &nbsp;|&nbsp; no lasers to Earth — power hops safely through the mesh instead<br/>
   orange block near Earth = Shipyard, linked into Earth's relay + power network &nbsp;|&nbsp; small orange ships = automated Mining Ships, cycling out to a random planet, harvesting, and back<br/>
   dashed line through the sun = its direction of travel relative to the galaxy (foundry sits on the forward half)<br/>
   black sphere behind the sun = Infinite Compute, directly opposite the foundry &nbsp;|&nbsp; red dots/lines = laser relay chain powering it (safe here — far side of the sun from Earth)<br/>
-  faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line, powered by the same Laser Transmitter via a long bypass relay<br/>
+  faint sphere past Neptune's orbit = heliosphere boundary &nbsp;|&nbsp; cyan hull beyond it = Survey Ship, patrolling parallel to the galactic line, powered by the same Laser Transmitter via a multi-hop long-haul relay chain (not one bare beam)<br/>
   mint dishes between Mercury and Venus = Solar Observatories, orbiting the sun and sweeping between deep space and the sun itself, searching for a galactic data transmission<br/>
   toolbar below: speed &minus;/+ scales simulation rate (it never pauses) &nbsp;|&nbsp; labels button toggles the on-screen structure titles
 </div>
@@ -140,6 +140,17 @@ function makeSelectable(mesh, info, hitboxRadius) {
   mesh.add(hitbox);
   selectables.push(hitbox);
   return mesh;
+}
+
+// lines (energy-network links) are selectable directly — THREE.Line has its own
+// raycast() method, so unlike makeSelectable() above there's no hitbox mesh needed,
+// just registration. raycaster.params.Line.threshold (set below) controls how close
+// a click has to land to register a hit on a thin line.
+function makeLineSelectable(line, info) {
+  line.userData.info = info;
+  line.userData.selectTarget = line;
+  selectables.push(line);
+  return line;
 }
 
 // ---------- sun ----------
@@ -312,6 +323,13 @@ for (let i = 0; i < COLLECTOR_COUNT; i++) {
   const mat = new THREE.LineBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.5 });
   const line = new THREE.Line(geo, mat);
   scene.add(line);
+  makeLineSelectable(line, {
+    name: "Photon Link",
+    kind: "Link",
+    deviceType: "photon-link",
+    status: "active",
+    function: "Shares reflected sunlight between two neighboring mirrors in the sun-orbiting ring, ahead of each mirror routing its share onward to its own paired diamond lens.",
+  });
   collectorLinks.push(line);
 }
 
@@ -398,11 +416,25 @@ for (let i = 0; i < COLLECTOR_COUNT; i++) {
   inGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
   const inBeam = new THREE.Line(inGeo, new THREE.LineBasicMaterial({ color: 0xffcc55, transparent: true, opacity: 0.5 }));
   scene.add(inBeam);
+  makeLineSelectable(inBeam, {
+    name: `Mirror ${i + 1} → Lens Beam`,
+    kind: "Link",
+    deviceType: "lens-beam-in",
+    status: "active",
+    function: `Reflected sunlight flowing from Mirror ${i + 1} into its paired Diamond Lens ${i + 1}, the first leg of the amplification path toward the Solar Foundry.`,
+  });
 
   const outGeo = new THREE.BufferGeometry();
   outGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
   const outBeam = new THREE.Line(outGeo, new THREE.LineBasicMaterial({ color: 0xfff4c0, transparent: true, opacity: 0.85 }));
   scene.add(outBeam);
+  makeLineSelectable(outBeam, {
+    name: `Lens ${i + 1} → Foundry Beam`,
+    kind: "Link",
+    deviceType: "lens-beam-out",
+    status: "active",
+    function: `Amplified, focused light flowing from Diamond Lens ${i + 1} onward to the static Solar Foundry focal point.`,
+  });
 
   lenses.push({ mesh: lens, collector: collectors[i], inBeam, outBeam });
 }
@@ -508,11 +540,14 @@ function nearestIndices(pos, nodes, excludeIndex, k) {
     .map((e) => e.idx);
 }
 
-function addStaticLink(a, b, color, opacity) {
+function addStaticLink(a, b, color, opacity, info) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([a.x, a.y, a.z, b.x, b.y, b.z]), 3));
   const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
-  scene.add(new THREE.Line(geo, mat));
+  const line = new THREE.Line(geo, mat);
+  scene.add(line);
+  if (info) makeLineSelectable(line, info);
+  return line;
 }
 
 // minimum spanning tree over the relay nodes, rooted at whichever node the transmitter
@@ -551,10 +586,24 @@ const transmitterEntryIdx = nearestIndices(transmitter.position, relayNodes, -1,
 
 // backbone links: guaranteed to reach every relay node from the transmitter's entry
 // point (brighter — this is the real, always-connected power path)
+const meshBackboneInfo = {
+  name: "Power Relay Mesh Link",
+  kind: "Link",
+  deviceType: "power-relay-mesh",
+  status: "active",
+  function: "A backbone hop in the microwave power relay mesh — part of the guaranteed, always-connected path carrying energy from the Solar Foundry's Power Transmitter out to every planet's rectenna.",
+};
+const meshRedundantInfo = {
+  name: "Power Relay Mesh Link (redundant)",
+  kind: "Link",
+  deviceType: "power-relay-mesh",
+  status: "active",
+  function: "A redundant link in the microwave power relay mesh, layered on top of the guaranteed backbone for the mesh's reroutable-web look — not required for connectivity, just an alternate path.",
+};
 const meshLinkPairs = new Set();
 for (const [a, b] of buildSpanningTree(relayNodes, transmitterEntryIdx)) {
   meshLinkPairs.add(a < b ? `${a}-${b}` : `${b}-${a}`);
-  addStaticLink(relayNodes[a].pos, relayNodes[b].pos, 0xa07bff, 0.55);
+  addStaticLink(relayNodes[a].pos, relayNodes[b].pos, 0xa07bff, 0.55, meshBackboneInfo);
 }
 
 // a handful of redundant nearest-neighbor links layered on top of the backbone, purely
@@ -565,11 +614,17 @@ for (let i = 0; i < RELAY_COUNT; i++) {
   const key = i < j ? `${i}-${j}` : `${j}-${i}`;
   if (meshLinkPairs.has(key)) continue;
   meshLinkPairs.add(key);
-  addStaticLink(relayNodes[i].pos, relayNodes[j].pos, 0xa07bff, 0.18);
+  addStaticLink(relayNodes[i].pos, relayNodes[j].pos, 0xa07bff, 0.18, meshRedundantInfo);
 }
 
 // transmitter's uplink into the mesh (static — the transmitter doesn't move)
-addStaticLink(transmitter.position, relayNodes[transmitterEntryIdx].pos, 0xfff4c0, 0.7);
+addStaticLink(transmitter.position, relayNodes[transmitterEntryIdx].pos, 0xfff4c0, 0.7, {
+  name: "Transmitter Uplink",
+  kind: "Link",
+  deviceType: "power-uplink",
+  status: "active",
+  function: "The Power Transmitter's fixed link into the relay mesh backbone — the first hop of the solar-system-wide power delivery network.",
+});
 
 // each planet's downlink is dynamic: as it orbits, it re-aims to whichever relay node
 // is currently nearest (generalizes what used to be an Earth-only line)
@@ -578,6 +633,13 @@ for (const pr of planetRectennas) {
   geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
   pr.line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.8 }));
   scene.add(pr.line);
+  makeLineSelectable(pr.line, {
+    name: `${pr.planet.name} Power Downlink`,
+    kind: "Link",
+    deviceType: "power-downlink",
+    status: "active",
+    function: `The final hop of the power relay mesh into ${pr.planet.name}'s Rectenna. Continuously re-aims to whichever relay node is currently nearest as ${pr.planet.name} orbits.`,
+  });
 }
 
 // ---------- earth shipyard & automated mining fleet ----------
@@ -612,6 +674,13 @@ const shipyardPowerLink = new THREE.Line(
   new THREE.LineBasicMaterial({ color: 0x66e0c4, transparent: true, opacity: 0.6 })
 );
 scene.add(shipyardPowerLink);
+makeLineSelectable(shipyardPowerLink, {
+  name: "Shipyard Power Link",
+  kind: "Link",
+  deviceType: "power-downlink",
+  status: "active",
+  function: "Draws power for the Earth Shipyard directly from the Earth Rectenna, rather than the shipyard operating as an independent, unpowered facility.",
+});
 
 const MINING_SHIP_COUNT = 5;
 const MINING_SHIP_SPEED = 5;
@@ -751,11 +820,13 @@ for (let i = 0; i < LASER_RELAY_COUNT; i++) {
 
 const laserChainPoints = [LASER_TRANSMITTER_POS, ...laserRelayPositions, BLACKHOLE_POS];
 for (let i = 0; i < laserChainPoints.length - 1; i++) {
-  const a = laserChainPoints[i], b = laserChainPoints[i + 1];
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([a.x, a.y, a.z, b.x, b.y, b.z]), 3));
-  const mat = new THREE.LineBasicMaterial({ color: 0xff3344, transparent: true, opacity: 0.85 });
-  scene.add(new THREE.Line(geo, mat));
+  addStaticLink(laserChainPoints[i], laserChainPoints[i + 1], 0xff3344, 0.85, {
+    name: "Infinite Compute Laser Link",
+    kind: "Link",
+    deviceType: "laser-chain",
+    status: "active",
+    function: "One hop in the fixed laser relay chain carrying power from the Laser Transmitter to Infinite Compute, entirely on the far side of the sun from Earth.",
+  });
 }
 
 // ---------- heliosphere boundary (reference marker only, not a device) ----------
@@ -790,7 +861,7 @@ makeSelectable(ship, {
   kind: "Device",
   deviceType: "survey-ship",
   status: "active",
-  function: "Patrols a track parallel to the sun's galactic travel line, ahead of the heliosphere, collecting observational data. Powered by the same Laser Transmitter that feeds Infinite Compute, via a long bypass relay chain routed wide of the sun.",
+  function: "Patrols a track parallel to the sun's galactic travel line, ahead of the heliosphere, collecting observational data. Powered by the same Laser Transmitter that feeds Infinite Compute, via a long-haul relay chain that bypasses the sun, then threads outward past the heliosphere in a series of high-power amplifying hops.",
 }, 0.7);
 
 const shipLabel = makeTextSprite(SURVEY_SHIP_NAME.toUpperCase(), "#bff3ff");
@@ -798,7 +869,8 @@ scene.add(shipLabel); // position tracks the ship every frame, since (unlike the
 majorLabels.push(shipLabel);
 
 // two fixed relay hops bending the beam around the sun (well outside its radius 4)
-// from the transmitter (behind, on-axis) out to the ship's patrol lane (in front, offset)
+// from the transmitter (behind, on-axis) out to the start of the long-haul chain
+// (in front, offset) that carries it the rest of the way to the ship's patrol lane
 const bypassWaypoints = [
   GALACTIC_TRAVEL_DIR.clone().multiplyScalar(-2).addScaledVector(V, 5),
   GALACTIC_TRAVEL_DIR.clone().multiplyScalar(4).addScaledVector(V, 5),
@@ -815,17 +887,74 @@ for (let i = 0; i < bypassWaypoints.length; i++) {
     kind: "Device",
     deviceType: "laser-relay",
     status: "active",
-    function: "Fixed laser relay station bending the Laser Transmitter's beam wide around the sun, carrying power forward to the Survey Ship's patrol lane in front of the sun.",
+    function: "Fixed laser relay station bending the Laser Transmitter's beam wide around the sun, carrying power forward into the long-haul relay chain toward the Survey Ship's patrol lane.",
   }, 0.4);
 }
-addStaticLink(LASER_TRANSMITTER_POS, bypassWaypoints[0], 0xff3344, 0.85);
-addStaticLink(bypassWaypoints[0], bypassWaypoints[1], 0xff3344, 0.85);
+const bypassLinkInfo = {
+  name: "Laser Bypass Link",
+  kind: "Link",
+  deviceType: "laser-chain",
+  status: "active",
+  function: "One hop bending the Laser Transmitter's beam wide around the sun, ahead of the long-haul chain out to the Survey Ship's patrol lane.",
+};
+addStaticLink(LASER_TRANSMITTER_POS, bypassWaypoints[0], 0xff3344, 0.85, bypassLinkInfo);
+addStaticLink(bypassWaypoints[0], bypassWaypoints[1], 0xff3344, 0.85, bypassLinkInfo);
 
-// final leg is dynamic — the ship moves along its patrol lane
+// long-haul relay chain: the survey ship patrols tens of units past the heliosphere —
+// by far the longest distance any link in this network has to cover. A single bare
+// beam spanning that whole gap (which is what this used to be) doesn't match how every
+// other power link here works, so instead a chain of fixed, high-power relay/amplifier
+// stations carries it the rest of the way in short hops, each one re-focusing the beam
+// so it doesn't spread out over the distance. Only the final hop — from the outermost
+// station to the ship itself — needs to be dynamic, since the ship keeps moving.
+const SHIP_RELAY_COUNT = 5;
+const SHIP_CHAIN_OUTER = GALACTIC_TRAVEL_DIR.clone()
+  .multiplyScalar((SHIP_TRAVEL_MIN + SHIP_TRAVEL_MAX) / 2 - 4) // just inside the patrol lane's midpoint
+  .addScaledVector(V, SHIP_LATERAL_OFFSET); // same lateral offset as the ship's lane, so the final hop stays short
+const shipRelayPositions = [];
+for (let i = 1; i <= SHIP_RELAY_COUNT; i++) {
+  const relayT = i / (SHIP_RELAY_COUNT + 1);
+  shipRelayPositions.push(new THREE.Vector3().lerpVectors(bypassWaypoints[1], SHIP_CHAIN_OUTER, relayT));
+}
+for (let i = 0; i < SHIP_RELAY_COUNT; i++) {
+  const relay = new THREE.Mesh(
+    new THREE.SphereGeometry(0.2, 10, 10),
+    new THREE.MeshStandardMaterial({ color: 0xff3344, emissive: 0x550a10, emissiveIntensity: 0.8 })
+  );
+  relay.position.copy(shipRelayPositions[i]);
+  scene.add(relay);
+  makeSelectable(relay, {
+    name: `Ship Relay ${i + 1}`,
+    kind: "Device",
+    deviceType: "laser-relay",
+    status: "active",
+    function: `High-power laser relay station, hop ${i + 1} of ${SHIP_RELAY_COUNT} in the long-haul chain carrying the Laser Transmitter's beam out to the Survey Ship's patrol lane beyond the heliosphere. Re-amplifies and re-aims the beam onward so it stays tightly focused over the distance instead of spreading out across one long, unbroken leg.`,
+  }, 0.42);
+}
+const shipChainPoints = [bypassWaypoints[1], ...shipRelayPositions];
+for (let i = 0; i < shipChainPoints.length - 1; i++) {
+  addStaticLink(shipChainPoints[i], shipChainPoints[i + 1], 0xff3344, 0.85, {
+    name: `Ship Relay Chain Link ${i + 1}`,
+    kind: "Link",
+    deviceType: "laser-chain",
+    status: "active",
+    function: "One hop in the long-haul relay chain carrying the Laser Transmitter's beam out to the Survey Ship's patrol lane beyond the heliosphere.",
+  });
+}
+
+// final leg is dynamic — the ship moves along its patrol lane, so only this last,
+// now-short hop needs to continuously re-aim (everything upstream of it is fixed)
 const shipBeamGeo = new THREE.BufferGeometry();
 shipBeamGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(6), 3));
 const shipBeam = new THREE.Line(shipBeamGeo, new THREE.LineBasicMaterial({ color: 0xff3344, transparent: true, opacity: 0.85 }));
 scene.add(shipBeam);
+makeLineSelectable(shipBeam, {
+  name: "Ship Relay Final Hop",
+  kind: "Link",
+  deviceType: "laser-chain",
+  status: "active",
+  function: "The last, dynamic hop of the Survey Ship's power link — from the outermost fixed Ship Relay to the ship itself, continuously re-aimed as it patrols.",
+});
 
 // ---------- observation satellites: watch the sun, scan for a galactic data transmission ----------
 // A dedicated ring between Mercury's and Venus's orbits (clear of both). Each satellite
@@ -859,6 +988,7 @@ for (let i = 0; i < OBS_COUNT; i++) {
 
 // ---------- click-to-select ----------
 const raycaster = new THREE.Raycaster();
+raycaster.params.Line.threshold = 0.35; // click tolerance for thin energy-network links
 const pointerNdc = new THREE.Vector2();
 let selected = null;
 let highlightRing = null;
@@ -1113,7 +1243,7 @@ function animate() {
   ship.position.copy(GALACTIC_TRAVEL_DIR).multiplyScalar(shipT).addScaledVector(V, SHIP_LATERAL_OFFSET);
   shipLabel.position.copy(ship.position).add(new THREE.Vector3(0, 1.2, 0));
   {
-    const b = bypassWaypoints[1];
+    const b = shipRelayPositions[shipRelayPositions.length - 1];
     const arr = shipBeam.geometry.attributes.position.array;
     arr[0] = b.x; arr[1] = b.y; arr[2] = b.z;
     arr[3] = ship.position.x; arr[4] = ship.position.y; arr[5] = ship.position.z;

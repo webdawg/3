@@ -1,0 +1,1 @@
+commit and push this then dump this entire prompt into a llm prompt log dir with todays data and todays time

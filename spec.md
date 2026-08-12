@@ -168,6 +168,24 @@ Applies the same on-screen title treatment from Goal 5 (Infinite Compute) to the
 
 Fixed by rebuilding the mesh as a **minimum spanning tree rooted at the transmitter's entry node** (Prim's algorithm over the relay nodes), which guarantees by construction that every relay node — and therefore every planet's rectenna downstream of it — has exactly one traceable path back to the transmitter. A handful of redundant nearest-neighbor links are layered on top of that guaranteed backbone purely for Goal 4's original "different lines"/reroutable-mesh look; they're additive only, so they can never reintroduce a disconnected pocket. The backbone renders at higher opacity than the redundant links, so the actual guaranteed power path reads as visually distinct from the decorative extra links.
 
+### Survey Ship Long-Haul Power Relay Correction (verbatim)
+
+> we have to power the survey ship with the sun, it looks like there is some red laswer there - what is it - architecht a network of highest power energy transmission to provide power to this ship outside of the helosphere
+
+**Implications for the spec:** the "red laser" is the Laser Transmitter's existing power link to the Survey Ship (Goal 6) — but inspecting it turned up the same category of problem as the relay-mesh correction above. After the two fixed hops that bend the beam around the sun, the original implementation ran one single, unbroken beam directly from that last bypass relay (only ~6 units from the sun) all the way out to the ship's patrol lane (52–58 units out, beyond the heliosphere) — by a wide margin the single longest link anywhere in the simulation, and the only one not built out of short relay hops the way every other power system here is (the foundry-to-planet mesh, the Infinite Compute chain).
+
+Fixed by extending the chain with a proper **long-haul relay leg**: 5 new fixed "Ship Relay" stations, evenly spaced between the last bypass relay and a fixed point just inside the patrol lane's midpoint, each one framed as a high-power amplifier/repeater re-focusing the beam onward rather than letting it spread out over the distance. Only the very last hop — from the outermost fixed station to the ship itself — stays dynamic, since the ship is the one thing on this route that actually moves; and because that outermost station sits on the same line the ship patrols along, the dynamic hop is now typically just a few units long instead of the original ~50. The full path is now: Laser Transmitter → 2 bypass relays (around the sun) → 5 long-haul Ship Relays (out past the heliosphere) → Survey Ship.
+
+### Goal 10 — Selectable Energy-Network Links (verbatim)
+
+> make it so the energy networks are selectable
+
+**Implications for the spec:**
+
+- **New `kind` value — `"Link"`**: until now, only bodies/devices (points and structures) were selectable — the connecting lines themselves were purely decorative geometry. Added a parallel selection path (`makeLineSelectable`, alongside the existing `makeSelectable` for meshes) so a line can be clicked directly, via `THREE.Line`'s native raycasting (`raycaster.params.Line.threshold` set to give thin lines a reasonable click tolerance). `kind: "Link"` is the fourth taxonomy value alongside `"Star" | "Planet" | "Device" | "Structure"` from Goal 8 — a distinct category for the connections themselves rather than the things they connect.
+- **Scoped to energy networks specifically**, per the request's wording: every link in the sunlight-to-power pipeline is now selectable — photon links between mirrors, each lens's in/out beams, the power relay mesh (both backbone and redundant links, distinguishing which is which in their `function` text), the transmitter's uplink, every planet's downlink, the shipyard's power link, the Infinite Compute laser chain, and the Survey Ship's full long-haul relay chain including its dynamic final hop. Deliberately **not** included: the Earth relay ring's laser links and the shipyard's data link (both explicitly data/topology links, not energy, per the Goal 9 scoping note above) and the dashed galactic reference line (not a network link at all).
+- **Mesh links share generic info objects rather than one unique object per edge**: the power relay mesh's ~35 backbone edges and similar count of redundant edges don't have individually meaningful identities in the data model (they're anonymous graph edges, unlike named devices) — so all backbone edges share one `"Power Relay Mesh Link"` info object and all redundant edges share one `"Power Relay Mesh Link (redundant)"` object, distinguished from each other so clicking either communicates whether that specific edge is part of the guaranteed backbone or just a decorative reroute option.
+
 Phase 1 is deliberately narrow. It covers only:
 
 1. **Gravity** — N-body gravitational attraction between the sun, planets, and devices (or a simplified two-body/patched-conic model per orbiting object, see Open Questions).
@@ -195,6 +213,7 @@ Explicitly out of scope for Phase 1: solar power modeling, device attributes/sub
 - Solar observatories searching for a galactic data transmission (Goal 7): a device that observes its own orbital host (the sun) while independently, continuously scanning elsewhere (deep space and the sun itself) for something whose source isn't known yet — a "search" behavior distinct from every other device so far, which are all either fixed-purpose (mirror, lens) or fixed-route (relay, transmitter). Also the first goal to require checking a new device ring against existing orbits' distance ranges before placing it.
 - Simulation speed control, interface documentation, and label standards (Goal 8): a toolbar drives a global speed multiplier clamped above zero — the simulation can be slowed but never paused. The click-to-select info panel and on-screen HUD controls are now formally spec'd. `kind`/`deviceType` inconsistencies between code and this document were found and resolved (see the updated Core Data Model), and the two existing floating structure titles (Infinite Compute, Survey Ship) gained camera-distance-based scaling and a shared on/off toggle, registered through one `majorLabels` list so future big-object titles can join the same behavior with minimal wiring. Still open: whether label mode should ever grow beyond a single on/off toggle (e.g., a tier that also shows every device's name when zoomed in close) is left for a future goal.
 - Automated mining fleet and system-wide power network (Goal 9): a new Earth Shipyard structure builds and launches Mining Ship devices that autonomously cycle between a randomly chosen planet and the shipyard, harvesting along the way, using the same category of scripted kinematic motion already established for the Survey Ship and rectenna re-aiming (not integrated thrust — that's still Goal 1's future work). The microwave power-delivery network now reaches every planet, not just Earth, via a widened relay mesh (out to Neptune's orbit) and one rectenna per planet. Still open: mining ships don't yet carry any actual cargo/element data (Design Principles' "attributes are coming later" applies here too), and the shipyard doesn't yet enforce a build rate or ship cap tied to any resource — ships are simply spawned once at startup.
+- Selectable energy-network links (Goal 10): every link in the sunlight-to-power pipeline — photon links, lens beams, the power relay mesh, planet downlinks, the shipyard's power link, and both laser chains (Infinite Compute, Survey Ship) — is now independently clickable via a new `kind: "Link"` taxonomy value, not just the devices at each end. Deliberately scoped to energy links only, not data links (Earth relay ring, shipyard data link). Still open: whether data links should eventually get the same treatment is left for a future goal, and per-edge identity in the power relay mesh remains generic (shared info objects for "backbone" vs "redundant," not one unique identity per edge).
 
 Because attributes are coming later, the data model should represent devices (and other bodies) as extensible entities from day one, not just bare position/velocity structs. Devices are never deleted on retirement — only reassigned status and (eventually) relocated to a scrapyard — so the model must support a persistent lifecycle rather than add/remove semantics.
 
@@ -208,11 +227,14 @@ CelestialBody
   parent            (id of body it orbits; null for the sun)
   position (x, y, z)
   velocity (vx, vy, vz)
-  kind              ("Star" | "Planet" | "Device" | "Structure" — "Structure" is
-                     reserved for entities this spec itself calls a "structure type"
+  kind              ("Star" | "Planet" | "Device" | "Structure" | "Link" — "Structure"
+                     is reserved for entities this spec itself calls a "structure type"
                      (Solar Foundry, Infinite Compute); every other device/structure
                      the spec introduces as a "device type" uses "Device", even if
-                     it's static/one-of-a-kind. See Goal 8.)
+                     it's static/one-of-a-kind (see Goal 8). "Link" is for the
+                     connecting lines themselves — energy-network links are
+                     independently selectable, not just their endpoints (see the
+                     Selectable Energy-Network Links section below).
   attributes: {}     (open bag for device-specific data, e.g.:
                         deviceType   ("satellite" | "mirror" | "antenna-segment" | "solar-collector" | ...)
                         status       ("active" | "retired")

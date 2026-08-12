@@ -1,0 +1,71 @@
+Session prompt log — dumped 2026-08-12 16:41:36 EDT
+Project: Solar System Data Center — Systems & Networks Simulation
+Repo: /home/neoweb/DATA/CODE/3 (github.com/webdawg/3)
+
+This is a raw, verbatim, chronological record of every user prompt in this
+session, preserved unedited (typos included) for history purposes. Unlike
+spec.md, which curates prompts into organized Goals with analysis, this file
+is the unfiltered input — including prompts that never became a formal Goal.
+See llm-prompt-log/README.md for the policy this log follows.
+
+---
+
+[01] yo we need to resume our current project - bring the software in this dir up so we can continue - please also create a runme or something so  you get htis and pople get this
+
+---
+
+[02] no you run this stuff and manage it - lets get going bro - lets keep coding foward - give me a bulleted list of what we are building here
+
+---
+
+[03] we need to add a speed up and speed down setting - this simulation can never be stopped - you have all the how to use the interface stuff up top already so lets get that coded into the spec - i like that - there are also inconsistincies in the labeling standards inside the game - lets get that setup now - i like the current info pane when you click an object - spec document that -  i have a problem with titles attached to big objects that are inside of the simulation, there are two right now - one for the blackhole, and one for the ship - lets keep somethign like this - but we are going to have to shrink and enlarge the text as we zoom out and zoom in and we want a label mode - so add a button for that
+
+---
+
+[04] DO WE HAVE SPEED CONTROL YET?
+
+---
+
+[05] standarized the developer port of this application
+
+---
+
+[06] commit and push this
+
+---
+
+[07] create a set of automated minine ships build from a shipyard that is close to earth - we harvest elements from everywhere inside of the solar system in an automated manner - link our earth engergy network, and expand all energy networks to touch every planet
+
+---
+
+[08] commit and push this
+
+---
+
+[09] there is a alternitive energy network that is currently looks like purple dots - what is it
+
+---
+
+[10] it is not connected by anything right now - what energy is it connected with and how can we represent that
+
+---
+
+[11] commit and push this then dump this entire prompt into a llm prompt log dir with todays data and todays time
+
+---
+
+[12] we have to power the survey ship with the sun, it looks like there is some red laswer there - what is it - architecht a network of highest power energy transmission to provide power to this ship outside of the helosphere
+
+---
+
+[13] dump the entire context of this session dated into llm-prompt-log dir and create a spec that does this every once in a while for history purposes - i dont know what the proper cadence is but we want to perserve user prompts in some manner
+
+---
+
+[14] make it so the energy networks are selectable
+(sent mid-turn, while [13] was still being worked)
+
+---
+
+[15] no keep going
+(sent after an interruption notice, confirming to continue [14]'s work)
